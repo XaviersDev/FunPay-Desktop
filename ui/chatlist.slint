@@ -1,0 +1,665 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { ChatRow, FolderRow } from "types.slint";
+import { IconButton, Avatar, Badge, MenuItem, MenuSep, MenuCard, PrimaryButton, Dim, TourMark } from "widgets.slint";
+import { EpicNick } from "epic.slint";
+
+export component FolderIcon inherits Image {
+    in property <int> kind;
+    in property <bool> on;
+    source: kind == 0 ? (on ? @image-url("icons/forum-fill.svg") : @image-url("icons/forum.svg"))
+        : kind == 1 ? (on ? @image-url("icons/person-fill.svg") : @image-url("icons/person.svg"))
+        : kind == 2 ? (on ? @image-url("icons/mark_chat_unread-fill.svg") : @image-url("icons/mark_chat_unread.svg"))
+        : kind == 3 ? (on ? @image-url("icons/groups-fill.svg") : @image-url("icons/groups.svg"))
+        : kind == 4 ? @image-url("icons/archive.svg")
+        : @image-url("icons/folder.svg");
+}
+
+component RailItem inherits Rectangle {
+    in property <FolderRow> f;
+    in property <bool> on;
+    property <length> mx;
+    property <length> my;
+    height: 62px;
+    background: on ? Theme.rail-on : ta.has-hover ? #ffffff0d : transparent;
+    VerticalLayout {
+        alignment: center;
+        spacing: 4px;
+        HorizontalLayout {
+            alignment: center;
+            FolderIcon {
+                kind: f.icon;
+                on: root.on;
+                width: 25px;
+                height: 25px;
+                colorize: root.on ? white : Theme.rail-tx;
+            }
+        }
+        Text {
+            text: f.name;
+            color: root.on ? white : Theme.rail-tx;
+            font-size: 11px;
+            font-weight: 550;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+    if f.unread != 0: Badge {
+        x: parent.width / 2 + 3px;
+        y: 6px;
+        count: f.unread;
+        ring: Theme.rail;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Api.select-folder(f.id); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right && f.icon == 5) {
+                root.mx = self.mouse-x;
+                root.my = self.mouse-y;
+                menu.show();
+            }
+        }
+    }
+    menu := PopupWindow {
+        property <bool> left: root.absolute-position.x + root.mx + rcard.preferred-width + 8px > St.win-w;
+        property <bool> up: root.absolute-position.y + root.my + rcard.preferred-height + 8px > St.win-h;
+        x: self.left ? root.mx - rcard.preferred-width : root.mx;
+        y: self.up ? max(root.my - rcard.preferred-height, 30px - root.absolute-position.y) : root.my;
+        rcard := MenuCard {
+            from-right: menu.left;
+            from-bottom: menu.up;
+            VerticalLayout {
+                padding-top: 6px;
+                padding-bottom: 6px;
+                MenuItem {
+                    icon: @image-url("icons/delete.svg");
+                    text: "Удалить папку";
+                    danger: true;
+                    activated => { Api.delete-folder(f.id); }
+                }
+            }
+        }
+    }
+}
+
+export component Rail inherits Rectangle {
+    background: Theme.rail;
+    VerticalLayout {
+        padding-top: 4px;
+        Flickable {
+            // папки сверху, настройки и аватарка всегда прижаты к низу
+            height: min(col.preferred-height, root.height - 4px - 58px - 62px - 9px);
+            content-height: col.preferred-height;
+            col := VerticalLayout {
+                for f in St.folders: RailItem {
+                    f: f;
+                    on: St.folder == f.id && St.pane != 4;
+                }
+                // сделки и финансы: тот же вид, что у папок
+                Rectangle {
+                    height: 62px;
+                    background: St.pane == 4 ? Theme.rail-on : dta.has-hover ? #ffffff0d : transparent;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("icons/receipt_long.svg");
+                                width: 25px;
+                                height: 25px;
+                                colorize: St.pane == 4 ? white : Theme.rail-tx;
+                            }
+                        }
+                        Text { text: "Сделки"; color: St.pane == 4 ? white : Theme.rail-tx; font-size: 11px; font-weight: 550; horizontal-alignment: center; }
+                    }
+                    dta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { St.settings-open = false; Api.open-deals(0); }
+                    }
+                }
+            }
+        }
+        Rectangle { vertical-stretch: 1; }
+        Rectangle {
+            height: 9px;
+            Rectangle { x: 16px; width: parent.width - 32px; height: 1px; background: #ffffff1a; }
+        }
+        Rectangle {
+            height: 58px;
+            background: sta.has-hover || St.settings-open ? #ffffff0d : transparent;
+            Image {
+                source: St.settings-open ? @image-url("icons/settings-fill.svg") : @image-url("icons/settings.svg");
+                width: 25px;
+                colorize: St.settings-open ? white : Theme.rail-tx;
+            }
+            sta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { St.settings-open = !St.settings-open; }
+            }
+            TourMark { tid: "gear"; }
+        }
+        Rectangle {
+            height: 62px;
+            Avatar {
+                size: 38px;
+                img: St.me-avatar;
+                has-img: St.me-has-avatar;
+                letter: St.me-letter;
+                c1: #8E9BFF;
+                c2: #5B6CF0;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { if (St.me-id != "") { St.settings-open = false; Api.open-profile(St.me-id); } }
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                        accmenu.show();
+                    }
+                }
+            }
+            // правый клик по своей аватарке: быстрое переключение аккаунтов
+            accmenu := PopupWindow {
+                x: parent.width - 6px;
+                y: parent.height - acard.preferred-height;
+                acard := MenuCard {
+                    from-bottom: true;
+                    VerticalLayout {
+                        padding-top: 6px;
+                        padding-bottom: 6px;
+                        for a in St.accounts: Rectangle {
+                            height: 42px;
+                            min-width: 220px;
+                            background: ama.has-hover ? Theme.hover : transparent;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 14px;
+                                spacing: 10px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Avatar { size: 26px; img: a.avatar; has-img: a.has-avatar; letter: a.letter; c1: #8E9BFF; c2: #5B6CF0; }
+                                }
+                                Text { text: a.name; color: Theme.ink; font-size: 14px; font-weight: a.active ? 650 : 500; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                                if a.active: VerticalLayout {
+                                    alignment: center;
+                                    Image { source: @image-url("icons/check.svg"); width: 18px; colorize: Theme.accent; }
+                                }
+                            }
+                            ama := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Api.switch-account(a.id); }
+                            }
+                        }
+                        MenuSep { }
+                        MenuItem {
+                            icon: @image-url("icons/add.svg");
+                            text: "Добавить аккаунт";
+                            activated => { Api.add-account(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Chip inherits Rectangle {
+    in property <FolderRow> f;
+    in property <bool> on;
+    height: 30px;
+    width: hl.preferred-width;
+    border-radius: 15px;
+    background: on ? Theme.accent : ta.has-hover ? Theme.hover : Theme.field;
+    hl := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: f.unread > 0 ? 6px : 12px;
+        spacing: 6px;
+        alignment: center;
+        Text {
+            text: f.name;
+            color: root.on ? Theme.on-accent : Theme.ink;
+            font-size: 13px;
+            font-weight: 550;
+            vertical-alignment: center;
+        }
+        if f.unread > 0: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 18px;
+                width: max(18px, ct.preferred-width + 10px);
+                border-radius: 9px;
+                background: root.on ? #ffffff40 : Theme.accent;
+                ct := Text {
+                    text: f.unread > 99 ? "99+" : f.unread;
+                    color: white;
+                    font-size: 11px;
+                    font-weight: 700;
+                }
+            }
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Api.select-folder(f.id); }
+    }
+}
+
+component ChatItemView inherits Rectangle {
+    in property <ChatRow> item;
+    property <length> mx;
+    property <length> my;
+    property <bool> custom-folder: St.folder != "all" && St.folder != "personal" && St.folder != "unread" && St.folder != "common" && St.folder != "archive";
+    callback clicked();
+    height: item.kind == 9 ? 34px : 68px;
+    background: item.selected ? Theme.sel : ta.has-hover && item.kind != 9 ? Theme.hover : transparent;
+    if item.kind == 9: Text {
+        x: 16px;
+        y: 12px;
+        text: item.name;
+        color: Theme.accent;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    if item.kind != 9: HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 11px;
+        VerticalLayout {
+            alignment: center;
+            Avatar {
+                size: 48px;
+                img: item.avatar;
+                has-img: item.has-avatar;
+                letter: item.letter;
+                c1: item.c1;
+                c2: item.c2;
+                kind: item.kind;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 5px;
+                height: 20px;
+                if item.kind == 1 || item.kind == 2 || item.kind == 3: Image {
+                    source: @image-url("icons/groups.svg");
+                    width: 17px;
+                    colorize: item.selected ? Theme.on-sel : Theme.ink;
+                }
+                if !item.nick.on || item.selected: Text {
+                    text: item.name;
+                    color: item.selected ? Theme.on-sel : Theme.ink;
+                    font-size: 15px;
+                    font-weight: 600;
+                    overflow: elide;
+                    wrap: no-wrap;
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    vertical-alignment: center;
+                }
+                if item.nick.on && !item.selected: VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    EpicNick {
+                        text: item.name;
+                        nick: item.nick;
+                        font-size: 15px;
+                    }
+                }
+                if item.muted: Image {
+                    source: @image-url("icons/notifications_off.svg");
+                    width: 15px;
+                    colorize: item.selected ? Theme.on-sel : Theme.faint;
+                }
+                if item.check > 0: Image {
+                    source: item.check == 2 ? @image-url("icons/done_all.svg") : @image-url("icons/check.svg");
+                    width: 17px;
+                    colorize: item.selected ? Theme.on-sel : Theme.check;
+                }
+                Text {
+                    text: item.time;
+                    color: item.selected ? #ffffffd0 : Theme.muted;
+                    font-size: 12.5px;
+                    vertical-alignment: center;
+                    wrap: no-wrap;
+                }
+            }
+            HorizontalLayout {
+                spacing: 5px;
+                height: 20px;
+                if item.prefix != "": Text {
+                    text: item.prefix;
+                    color: item.selected ? Theme.on-sel : Theme.ink;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                    wrap: no-wrap;
+                }
+                Text {
+                    text: item.preview;
+                    color: item.selected ? #ffffffe0 : Theme.muted;
+                    font-size: 14px;
+                    overflow: elide;
+                    wrap: no-wrap;
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    vertical-alignment: center;
+                }
+                if item.unread != 0: VerticalLayout {
+                    alignment: center;
+                    Badge {
+                        count: item.unread;
+                        muted: item.muted;
+                    }
+                }
+                if item.unread == 0 && item.pinned: Image {
+                    source: @image-url("icons/push_pin.svg");
+                    width: 16px;
+                    colorize: item.selected ? Theme.on-sel : Theme.faint;
+                }
+            }
+        }
+    }
+    ta := TouchArea {
+        enabled: item.kind != 9;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                root.mx = self.mouse-x;
+                root.my = self.mouse-y;
+                menu.show();
+            }
+        }
+    }
+    menu := PopupWindow {
+        property <bool> left: root.absolute-position.x + root.mx + ccard.preferred-width + 8px > St.win-w;
+        property <bool> up: root.absolute-position.y + root.my + ccard.preferred-height + 8px > St.win-h;
+        x: self.left ? root.mx - ccard.preferred-width : root.mx;
+        y: self.up ? max(root.my - ccard.preferred-height, 30px - root.absolute-position.y) : root.my;
+        ccard := MenuCard {
+            from-right: menu.left;
+            from-bottom: menu.up;
+            VerticalLayout {
+                padding-top: 6px;
+                padding-bottom: 6px;
+                MenuItem {
+                    icon: item.pinned ? @image-url("icons/push_pin_off.svg") : @image-url("icons/push_pin.svg");
+                    text: item.pinned ? "Открепить" : "Закрепить";
+                    activated => { Api.chat-menu(item.id, item.kind, item.pinned ? "unpin" : "pin", ""); }
+                }
+                if item.kind == 0 && item.unread != 0: MenuItem {
+                    icon: @image-url("icons/mark_chat_read.svg");
+                    text: "Пометить как прочитанное";
+                    activated => { Api.chat-menu(item.id, item.kind, "read", ""); }
+                }
+                if item.kind == 0: MenuItem {
+                    icon: item.muted ? @image-url("icons/notifications_active.svg") : @image-url("icons/notifications_off.svg");
+                    text: item.muted ? "Включить уведомления" : "Выключить уведомления";
+                    activated => { Api.chat-menu(item.id, item.kind, item.muted ? "unmute" : "mute", ""); }
+                }
+                MenuItem {
+                    icon: @image-url("icons/create_new_folder.svg");
+                    text: "Добавить в папку";
+                    arrow: true;
+                    activated => { folders-menu.show(); }
+                }
+                if root.custom-folder: MenuItem {
+                    icon: @image-url("icons/folder.svg");
+                    text: "Убрать из этой папки";
+                    activated => { Api.chat-menu(item.id, item.kind, "folder-remove", St.folder); }
+                }
+                if item.kind == 0: MenuItem {
+                    icon: item.archived ? @image-url("icons/unarchive.svg") : @image-url("icons/archive.svg");
+                    text: item.archived ? "Вернуть из архива" : "Архивировать";
+                    activated => { Api.chat-menu(item.id, item.kind, item.archived ? "unarchive" : "archive", ""); }
+                }
+                if item.kind != 3: MenuSep { }
+                if item.kind != 3: MenuItem {
+                    icon: @image-url("icons/open_in_new.svg");
+                    text: "Открыть на FunPay";
+                    activated => { Api.chat-menu(item.id, item.kind, "web", ""); }
+                }
+                if item.kind == 2: MenuItem {
+                    icon: @image-url("icons/close.svg");
+                    text: "Убрать из недавних";
+                    activated => { Api.chat-menu(item.id, item.kind, "forget", ""); }
+                }
+            }
+        }
+    }
+    folders-menu := PopupWindow {
+        property <bool> left: root.absolute-position.x + root.mx + fcard.preferred-width + 8px > St.win-w;
+        property <bool> up: root.absolute-position.y + root.my + fcard.preferred-height + 8px > St.win-h;
+        x: self.left ? root.mx - fcard.preferred-width : root.mx;
+        y: self.up ? max(root.my - fcard.preferred-height, 30px - root.absolute-position.y) : root.my;
+        fcard := MenuCard {
+            from-right: folders-menu.left;
+            from-bottom: folders-menu.up;
+            VerticalLayout {
+                padding-top: 6px;
+                padding-bottom: 6px;
+                for f in St.folders: Rectangle {
+                    height: f.icon == 5 ? 34px : 0px;
+                    visible: f.icon == 5;
+                    MenuItem {
+                        icon: @image-url("icons/folder.svg");
+                        text: f.name;
+                        activated => { Api.chat-menu(item.id, item.kind, "folder-add", f.id); }
+                    }
+                }
+                MenuItem {
+                    icon: @image-url("icons/create_new_folder.svg");
+                    text: "Новая папка…";
+                    activated => {
+                        St.folder-dialog-chat = item.id;
+                        St.folder-dialog-open = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component ChatListPane inherits Rectangle {
+    in property <bool> compact-folders;
+    in property <bool> show-menu;
+    background: Theme.panel;
+    VerticalLayout {
+        HorizontalLayout {
+            padding-left: show-menu ? 6px : 12px;
+            padding-right: 12px;
+            padding-top: 8px;
+            padding-bottom: 6px;
+            spacing: 4px;
+            height: 52px;
+            if show-menu: IconButton {
+                icon: @image-url("icons/menu.svg");
+                clicked => { St.settings-open = true; }
+                TourMark { tid: "gear"; }
+            }
+            Rectangle {
+                border-radius: 19px;
+                background: Theme.field;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 6px;
+                    spacing: 8px;
+                    Image {
+                        source: @image-url("icons/search.svg");
+                        width: 19px;
+                        colorize: Theme.faint;
+                    }
+                    Rectangle {
+                        search := TextInput {
+                            width: parent.width;
+                            font-size: 14.5px;
+                            color: Theme.ink;
+                            single-line: true;
+                            vertical-alignment: center;
+                            selection-background-color: Theme.accent-soft;
+                            edited => { Api.search-changed(self.text); }
+                        }
+                        if search.text == "": Text {
+                            x: 0;
+                            width: parent.width;
+                            text: St.folder == "common" ? "Поиск по играм и чатам" : "Поиск";
+                            color: Theme.faint;
+                            font-size: 14.5px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    if search.text != "": IconButton {
+                        size: 28px;
+                        icon-size: 17px;
+                        icon: @image-url("icons/close.svg");
+                        clicked => {
+                            search.text = "";
+                            Api.search-changed("");
+                        }
+                    }
+                }
+            }
+            // сайт FunPay в мини-окне: купить то, чего в приложении пока нет
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    size: 36px;
+                    icon-size: 24px;
+                    icon: @image-url("icons/funpay_arrows.svg");
+                    tint: Theme.accent;
+                    clicked => { Api.open-url("https://funpay.com/"); }
+                }
+            }
+        }
+        if compact-folders: Flickable {
+            height: 40px;
+            content-width: chips.preferred-width;
+            chips := HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-bottom: 8px;
+                spacing: 6px;
+                for f in St.folders: Chip {
+                    f: f;
+                    on: St.folder == f.id;
+                }
+            }
+        }
+        if St.net-error != "": Rectangle {
+            height: 32px;
+            background: Theme.danger.with-alpha(0.12);
+            Text {
+                text: St.net-error;
+                color: Theme.danger;
+                font-size: 12.5px;
+                overflow: elide;
+                width: parent.width - 24px;
+                horizontal-alignment: center;
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            ListView {
+                for c in St.chats: ChatItemView {
+                    item: c;
+                    clicked => { Api.open-chat(c.id, c.kind); }
+                }
+            }
+            if St.chats.length == 0: Text {
+                width: parent.width - 40px;
+                text: St.chats-loading ? "Загружаю чаты…" : St.folder == "unread" ? "Всё прочитано" : "Здесь пока пусто";
+                color: Theme.muted;
+                font-size: 14px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+export component FolderDialog inherits Rectangle {
+    property <bool> shown;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim {
+        dismiss => { St.folder-dialog-open = false; }
+    }
+    card := Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.95;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: min(340px, root.width - 32px);
+        height: lay.preferred-height;
+        border-radius: 14px;
+        background: Theme.panel;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: Theme.shadow;
+        TouchArea { }
+        lay := VerticalLayout {
+            padding: 20px;
+            spacing: 14px;
+            Text {
+                text: "Новая папка";
+                color: Theme.ink;
+                font-size: 17px;
+                font-weight: 650;
+            }
+            Rectangle {
+                height: 40px;
+                border-radius: 10px;
+                background: Theme.field;
+                border-width: name.has-focus ? 1.5px : 0px;
+                border-color: Theme.accent;
+                name := TextInput {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    single-line: true;
+                    font-size: 14.5px;
+                    color: Theme.ink;
+                    vertical-alignment: center;
+                    accepted => {
+                        if (self.text != "") {
+                            Api.create-folder(self.text);
+                            St.folder-dialog-open = false;
+                        }
+                    }
+                }
+                if name.text == "": Text {
+                    x: 12px;
+                    text: "Название";
+                    color: Theme.faint;
+                    font-size: 14.5px;
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                PrimaryButton {
+                    width: 100px;
+                    text: "Отмена";
+                    flat: true;
+                    clicked => { St.folder-dialog-open = false; }
+                }
+                PrimaryButton {
+                    width: 110px;
+                    text: "Создать";
+                    enabled: name.text != "";
+                    clicked => {
+                        Api.create-folder(name.text);
+                        St.folder-dialog-open = false;
+                    }
+                }
+            }
+        }
+    }
+    init => { name.focus(); }
+}

@@ -1,0 +1,86 @@
+import { Theme } from "theme.slint";
+import { St } from "globals.slint";
+import { NickStyle } from "types.slint";
+
+// Цветной ник донатера: градиент, свечение, пульс, волна, глитч и частицы, как в мобильном приложении.
+export component EpicNick inherits Rectangle {
+    in property <string> text;
+    in property <NickStyle> nick;
+    in property <length> font-size: 14px;
+    in property <int> font-weight: 600;
+    in property <color> plain: Theme.ink;
+    in property <TextHorizontalAlignment> halign: left;
+    property <bool> live: nick.on && St.epic-anim && (nick.wave || nick.pulse || nick.glitch || nick.ov != 0);
+    property <float> ms: live ? animation-tick() / 1ms : 0;
+    property <float> period: max(400, nick.spd * 1000);
+    property <float> f: mod(ms, period) / period;
+    // треугольная волна 0..1..0
+    property <float> tri: f < 0.5 ? f * 2 : 2 - f * 2;
+    property <float> mid: nick.wave ? 0.12 + 0.76 * tri : 0.5;
+    property <float> alpha: nick.pulse ? 0.45 + 0.55 * (0.5 + 0.5 * cos(f * 360deg)) : 1;
+    property <length> jitter: nick.glitch && live ? (mod(ms, 200) < 100 ? 1 : -1) * (mod(ms, 1700) < 260 ? 2px : 0.6px) : 0px;
+    property <float> pt: mod(ms, 1800) / 1800;
+
+    preferred-width: tx.preferred-width;
+    min-width: 0;
+    preferred-height: tx.preferred-height;
+    height: tx.preferred-height;
+
+    // свечение: мягкий ореол цвета ника под надписью
+    if nick.on && nick.glow: Rectangle {
+        // под самой надписью, а не у левого края, если текст по центру или справа
+        property <length> tw: min(root.width, tx.preferred-width);
+        x: root.jitter + 2px + (root.halign == TextHorizontalAlignment.center ? (root.width - self.tw) / 2 : root.halign == TextHorizontalAlignment.right ? root.width - self.tw : 0px);
+        y: tx.preferred-height * 0.25;
+        width: self.tw - 4px;
+        height: tx.preferred-height * 0.5;
+        border-radius: self.height / 2;
+        background: nick.c1.with-alpha(0.10 * root.alpha);
+        drop-shadow-blur: 10px;
+        drop-shadow-color: nick.c1.with-alpha(0.55 * root.alpha);
+    }
+    tx := Text {
+        x: root.jitter;
+        width: root.width;
+        text: root.text;
+        font-size: root.font-size;
+        font-weight: nick.on ? 800 : root.font-weight;
+        overflow: elide;
+        wrap: no-wrap;
+        horizontal-alignment: root.halign;
+        color: !nick.on ? root.plain
+            : @linear-gradient(nick.ang * 1deg, nick.c1 0%, nick.c2 root.mid * 100%, nick.c3 100%);
+        opacity: root.alpha;
+    }
+    // частицы
+    if nick.on && nick.ov != 0 && root.live: pr := Rectangle {
+        width: min(root.width, tx.preferred-width);
+        x: root.halign == TextHorizontalAlignment.center ? (root.width - self.width) / 2 : 0px;
+        property <color> pcol: nick.pc;
+        for s[i] in [0.08, 0.52, 0.31, 0.83, 0.44, 0.67]: Rectangle {
+            property <float> p: mod(root.pt + i / 6, 1);
+            property <float> sway: sin((root.pt * 2 + i / 3) * 360deg);
+            property <length> sz: nick.ov == 6 ? 4px : nick.ov == 1 ? 3px : 2px;
+            width: nick.ov == 4 ? 7px : self.sz;
+            height: nick.ov == 4 ? 9px : self.sz;
+            border-radius: self.sz / 2;
+            x: parent.width * s + (nick.ov == 2 || nick.ov == 6 ? self.sway * 3px : 0px);
+            y: nick.ov == 2 || nick.ov == 4 ? parent.height * self.p - 4px
+                : nick.ov == 5 ? parent.height * mod(s * 1.7 + i * 0.13, 1)
+                : parent.height * (1 - self.p);
+            opacity: nick.ov == 5 ? 0.5 + 0.5 * sin((root.pt + s) * 720deg) : 1 - self.p * 0.9;
+            background: nick.ov == 4 || nick.ov == 7 ? transparent : pr.pcol;
+            if nick.ov == 4: Text {
+                text: i == 0 ? "1" : i == 1 ? "0" : i == 2 ? "A" : i == 3 ? "Z" : i == 4 ? "1" : "0";
+                font-size: 8px;
+                color: pr.pcol;
+            }
+        }
+        // молнии: короткие вспышки
+        if nick.ov == 7: Rectangle {
+            property <float> fl: mod(root.ms, 2300) / 2300;
+            border-radius: 6px;
+            background: pr.pcol.with-alpha(self.fl < 0.05 || (self.fl > 0.09 && self.fl < 0.12) ? 0.35 : 0);
+        }
+    }
+}

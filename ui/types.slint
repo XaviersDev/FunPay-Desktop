@@ -1,0 +1,215 @@
+// цветной ник донатера (как в мобильном приложении)
+export struct NickStyle {
+    on: bool,
+    c1: color,
+    c2: color,
+    c3: color,
+    ang: float,         // угол градиента
+    spd: float,         // скорость, секунды на цикл
+    glow: bool,
+    pulse: bool,
+    wave: bool,
+    glitch: bool,
+    ov: int,            // 0 нет, 1 огонь, 2 снег, 3 искры, 4 матрица, 5 звёзды, 6 шары, 7 молнии
+    pc: color,          // цвет частиц
+}
+
+export struct ChatRow {
+    id: string,
+    kind: int,          // 0 личный, 1 общий FunPay, 2 игровой, 3 чат FunPay Tools, 9 заголовок раздела
+    name: string,
+    preview: string,
+    prefix: string,     // «Вы:» или ник автора в превью
+    time: string,
+    unread: int,        // -1 точка, >0 число
+    avatar: image,
+    has-avatar: bool,
+    avatar-key: string,
+    letter: string,
+    c1: color,
+    c2: color,
+    selected: bool,
+    nick: NickStyle,
+    muted: bool,
+    pinned: bool,
+    archived: bool,
+    fpt: bool,
+    check: int,         // 0 нет, 1 одна галочка, 2 две
+}
+
+export struct FolderRow {
+    id: string,
+    name: string,
+    icon: int,          // 0 все, 1 личные, 2 непрочитанные, 3 общие, 4 архив, 5 своя
+    unread: int,
+}
+
+export struct Tile {
+    img: image,
+    has: bool,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    url: string,
+    key: string,
+}
+
+// ссылка внутри текста сообщения: байтовые границы в text
+export struct LinkSpan {
+    a: int,
+    b: int,
+    url: string,
+}
+
+export struct MsgRow {
+    kind: int,          // 0 сообщение, 1 дата
+    key: string,
+    out: bool,
+    group-start: bool,
+    tail: bool,
+    show-author: bool,
+    author: string,
+    author-id: string,
+    author-color: color,
+    nick: NickStyle,
+    show-avatar: bool,
+    avatar: image,
+    has-avatar: bool,
+    avatar-key: string,
+    letter: string,
+    c1: color,
+    c2: color,
+    text: string,
+    spacer: string,     // невидимый хвост под время
+    time: string,
+    time-full: string,  // время до секунды (по долгому наведению)
+    badge: string,
+    album: bool,
+    tiles: [Tile],
+    ratio: float,
+    state: int,         // 0 ушло, 1 отправляется, 2 ошибка
+    system: bool,
+    has-reply: bool,
+    reply-author: string,
+    reply-text: string,
+    reply-key: string,
+    orders: [string],
+    link: string,       // первая ссылка в сообщении, если есть
+    rich: styled-text,  // текст с кликабельными ссылками (если они есть)
+    has-links: bool,
+    links: [LinkSpan],
+    pinned: bool,
+}
+
+export struct OfferRow {
+    header: bool,
+    title: string,
+    price: string,
+    server: string,
+    url: string,
+}
+
+export struct ReviewRow {
+    rating: int,
+    text: string,
+    date: string,
+    detail: string,
+    reply: string,
+    order: string,      // номер заказа, если отзыв на своей странице
+    author: string,
+}
+
+export struct KV {
+    k: string,
+    v: string,
+}
+
+export struct PackRow {
+    id: string,
+    title: string,
+    icon: image,
+    has-icon: bool,
+    recent: bool,
+}
+
+export struct StickerCell {
+    key: string,
+    img: image,
+    has: bool,
+}
+
+// строка продаж/покупок
+export struct TradeRow {
+    id: string,
+    state: int,         // 0 закрыт, 1 оплачен, 2 возврат
+    status: string,
+    desc: string,
+    game: string,
+    price: string,
+    peer: string,
+    peer-id: string,
+    date: string,
+    letter: string,
+    c1: color,
+    c2: color,
+    avatar: image,
+    has-avatar: bool,
+}
+
+// строка «Финансов»
+export struct TxnRow {
+    id: string,
+    title: string,
+    state: int,         // 0 готово, 1 ждёт, 2 отменено
+    amount: string,
+    income: bool,
+    date: string,
+    payment: string,
+    order: string,
+}
+
+// вкладка встроенного браузера
+export struct BrowserTab {
+    id: int,
+    title: string,
+    url: string,
+    loading: bool,
+}
+
+// сохранённый аккаунт
+export struct AccountRow {
+    id: string,
+    name: string,
+    letter: string,
+    avatar: image,
+    has-avatar: bool,
+    active: bool,
+}
+
+// кнопка-шаблон
+export struct TplRow {
+    id: string,
+    name: string,
+    label: string,      // как подписана кнопка (ЗАГЛАВНЫЕ уже учтены)
+    text: string,
+    preview: string,    // текст с подставленными переменными
+    color: color,
+    fg: color,          // текст на сплошной заливке
+    has-color: bool,
+    hex: string,
+    has-image: bool,
+    image: image,
+    image-first: bool,
+    bind: int,
+}
+
+// команда автоответа
+export struct AutoRow {
+    id: string,
+    trigger: string,
+    response: string,
+    exact: bool,
+    cs: bool,
+    enabled: bool,
+}

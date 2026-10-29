@@ -1,0 +1,1650 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { OfferRow, ReviewRow, KV } from "types.slint";
+import { IconButton, Avatar, Pill, Toggle, SettingRow, PrimaryButton, LinkText, MenuItem, MenuCard, Dim, TourMark } from "widgets.slint";
+import { Album } from "chatview.slint";
+import { EpicNick } from "epic.slint";
+import { Contacts } from "extras.slint";
+
+// ============================================================ браузер
+
+export component BrowserBar inherits Rectangle {
+    in property <bool> login;
+    height: 44px;
+    background: Theme.panel;
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 2px;
+        VerticalLayout {
+            alignment: center;
+            IconButton { size: 34px; icon-size: 20px; icon: @image-url("icons/arrow_back.svg"); clicked => { Api.browser-back(); } }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton { size: 34px; icon-size: 20px; icon: @image-url("icons/arrow_forward.svg"); clicked => { Api.browser-forward(); } }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton { size: 34px; icon-size: 20px; icon: St.browser-loading ? @image-url("icons/close.svg") : @image-url("icons/refresh.svg"); clicked => { Api.browser-reload(); } }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            padding-left: 8px;
+            Text {
+                text: root.login ? "Вход в FunPay" : (St.browser-title != "" ? St.browser-title : "FunPay");
+                color: Theme.ink;
+                font-size: 14px;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: St.browser-url;
+                color: Theme.muted;
+                font-size: 12px;
+                overflow: elide;
+            }
+        }
+        if !root.login: VerticalLayout {
+            alignment: center;
+            IconButton { size: 34px; icon-size: 19px; icon: @image-url("icons/open_in_new.svg"); clicked => { Api.open-external(St.browser-url); } }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconButton { size: 34px; icon-size: 20px; icon: @image-url("icons/close.svg"); clicked => { Api.browser-close(); } }
+        }
+    }
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+}
+
+// ============================================================ вход
+
+export component LoginView inherits Rectangle {
+    background: Theme.panel;
+    if St.browser-login: BrowserBar {
+        y: 0;
+        width: parent.width;
+        login: true;
+    }
+    if St.browser-login: Text {
+        y: 60px;
+        text: "Загружаю страницу входа…";
+        color: Theme.muted;
+        font-size: 13px;
+        horizontal-alignment: center;
+        width: parent.width;
+    }
+    if !St.browser-login: Flickable {
+        content-height: max(self.height, col.preferred-height + 40px);
+        col := VerticalLayout {
+            x: (parent.width - self.width) / 2;
+            y: max(20px, (root.height - self.preferred-height) / 2 - 20px);
+            width: min(320px, root.width - 32px);
+            spacing: 0px;
+            alignment: start;
+            HorizontalLayout {
+                alignment: center;
+                padding-bottom: 18px;
+                Image { source: @image-url("icons/logo256.png"); width: 104px; height: 104px; }
+            }
+            Text {
+                text: St.login-page == 2 ? "Вход по ключу" : St.login-page == 1 ? "Другие способы входа" : St.adding-account ? "Ещё один аккаунт" : "FunPay Tools";
+                font-size: 22px;
+                font-weight: 650;
+                color: Theme.ink;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: St.login-page == 2 ? "Вставьте golden_key из браузера" : St.login-page == 1 ? "" : "Чаты FunPay на компьютере";
+                font-size: 14px;
+                color: Theme.muted;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Rectangle { height: 28px; }
+            if St.login-page == 0: VerticalLayout {
+                spacing: 8px;
+                HorizontalLayout {
+                    alignment: center;
+                    PrimaryButton {
+                        width: 260px;
+                        text: "Войти через браузер";
+                        busy: St.login-busy;
+                        TourMark { tid: "login"; }
+                        clicked => {
+                            if (St.webview-ok) { Api.login-browser(); }
+                            else { St.login-error = ""; St.login-page = 2; }
+                        }
+                    }
+                }
+                if !St.webview-ok: Text {
+                    text: "В системе нет Microsoft Edge WebView2, поэтому вход через браузер не сработает. Установите его или войдите по ключу.";
+                    color: Theme.muted;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                }
+            }
+            if St.login-page == 1: VerticalLayout {
+                spacing: 2px;
+                Rectangle {
+                    border-radius: 12px;
+                    clip: true;
+                    background: Theme.field;
+                    height: ml.preferred-height;
+                    ml := VerticalLayout {
+                        SettingRow {
+                            icon: @image-url("icons/key.svg");
+                            title: "Ввести golden_key";
+                            avail: min(320px, St.win-w - 32px);
+                            has-toggle: false;
+                            clicked => { St.login-error = ""; St.login-page = 2; }
+                        }
+                        SettingRow {
+                            icon: @image-url("icons/download.svg");
+                            title: "Файл из приложения";
+                            avail: min(320px, St.win-w - 32px);
+                            hint: "Бэкап .json из FunPay Tools на телефоне";
+                            has-toggle: false;
+                            clicked => { Api.login-import(); }
+                        }
+                    }
+                }
+            }
+            if St.login-page == 2: VerticalLayout {
+                spacing: 12px;
+                field := Rectangle {
+                    height: 44px;
+                    border-radius: 10px;
+                    background: Theme.field;
+                    border-width: gk.has-focus ? 1.5px : 0px;
+                    border-color: Theme.accent;
+                    property <bool> show: false;
+                    function paste() {
+                        gk.text = gk.text + Api.paste-clipboard();
+                        gk.focus();
+                        gk.set-selection-offsets(100000, 100000);
+                    }
+                    init => { gk.focus(); }
+                    FocusScope {
+                        x: 14px;
+                        width: parent.width - 94px;
+                        height: parent.height;
+                        capture-key-pressed(e) => {
+                            if (e.modifiers.control && (e.text == "v" || e.text == "V" || e.text == "м" || e.text == "М")) {
+                                field.paste();
+                                return accept;
+                            }
+                        if (e.modifiers.control && (e.text == "c" || e.text == "C" || e.text == "с" || e.text == "С")) {
+                            if (gk.anchor-position-byte-offset != gk.cursor-position-byte-offset) {
+                                Api.copy-range(gk.text, gk.anchor-position-byte-offset, gk.cursor-position-byte-offset);
+                            }
+                            return accept;
+                        }
+                        if (e.modifiers.control && (e.text == "x" || e.text == "X" || e.text == "ч" || e.text == "Ч")) {
+                            if (gk.anchor-position-byte-offset != gk.cursor-position-byte-offset) {
+                                let lo = min(gk.anchor-position-byte-offset, gk.cursor-position-byte-offset);
+                                gk.text = Api.cut-range(gk.text, gk.anchor-position-byte-offset, gk.cursor-position-byte-offset);
+                                gk.set-selection-offsets(lo, lo);
+                            }
+                            return accept;
+                        }
+                        if (e.modifiers.control && (e.text == "a" || e.text == "A" || e.text == "ф" || e.text == "Ф")) {
+                            gk.select-all();
+                            return accept;
+                        }
+                            return reject;
+                        }
+                        gk := TextInput {
+                            width: parent.width;
+                            height: parent.height;
+                            single-line: true;
+                            input-type: field.show ? text : password;
+                            font-size: 15px;
+                            color: Theme.ink;
+                            vertical-alignment: center;
+                            accepted => { Api.login-key(self.text); }
+                        }
+                    }
+                    if gk.text == "": Text {
+                        x: 14px;
+                        text: "golden_key";
+                        color: Theme.faint;
+                        font-size: 15px;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                    // вставить из буфера (для тех, у кого Ctrl+V капризничает)
+                    IconButton {
+                        x: parent.width - 2 * self.width - 6px;
+                        y: (parent.height - self.height) / 2;
+                        size: 34px;
+                        icon-size: 19px;
+                        icon: @image-url("icons/content_paste.svg");
+                        clicked => { field.paste(); }
+                    }
+                    IconButton {
+                        x: parent.width - self.width - 5px;
+                        y: (parent.height - self.height) / 2;
+                        size: 34px;
+                        icon-size: 20px;
+                        icon: field.show ? @image-url("icons/visibility_off.svg") : @image-url("icons/visibility.svg");
+                        clicked => { field.show = !field.show; }
+                    }
+                }
+                PrimaryButton {
+                    text: "Войти";
+                    enabled: gk.text != "";
+                    busy: St.login-busy;
+                    clicked => { Api.login-key(gk.text); }
+                }
+            }
+            if St.login-error != "": Text {
+                text: St.login-error;
+                color: Theme.danger;
+                font-size: 13px;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+            }
+            Rectangle { height: 18px; }
+            if St.adding-account && St.login-page == 0: HorizontalLayout {
+                alignment: center;
+                padding-bottom: 10px;
+                LinkText {
+                    text: "Отмена, вернуться в аккаунт";
+                    font-size: 13.5px;
+                    color: Theme.muted;
+                    clicked => { Api.cancel-add-account(); }
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                LinkText {
+                    text: St.login-page == 0 ? "Другие способы входа" : "Назад";
+                    font-size: 13.5px;
+                    clicked => {
+                        St.login-error = "";
+                        St.login-page = St.login-page == 0 ? 1 : St.login-page == 2 ? 1 : 0;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================ настройки
+
+component ThemeChip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    callback clicked();
+    height: 34px;
+    border-radius: 10px;
+    background: on ? Theme.accent : ta.has-hover ? Theme.hover : Theme.field;
+    Text {
+        text: root.text;
+        color: root.on ? Theme.on-accent : Theme.ink;
+        font-size: 13px;
+        font-weight: 550;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component SettingsView inherits Rectangle {
+    property <bool> shown;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim {
+        dismiss => { St.settings-open = false; }
+    }
+    card := Rectangle {
+        // выезжает слева
+        x: root.shown ? 0px : -48px;
+        opacity: root.shown ? 1 : 0;
+        animate x { duration: 200ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        animate opacity { duration: 140ms; easing: ease-out; }
+        width: min(400px, parent.width);
+        height: parent.height;
+        background: Theme.panel;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: Theme.shadow;
+        TouchArea { }
+        VerticalLayout {
+            Rectangle {
+                height: 52px;
+                HorizontalLayout {
+                    padding-left: 20px;
+                    padding-right: 8px;
+                    Text {
+                        text: "Настройки";
+                        font-size: 17px;
+                        font-weight: 650;
+                        color: Theme.ink;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton {
+                            icon: @image-url("icons/close.svg");
+                            clicked => { St.settings-open = false; }
+                        }
+                    }
+                }
+            }
+            ScrollView {
+                content-width: self.visible-width;
+                vertical-stretch: 1;
+                VerticalLayout {
+                    Rectangle {
+                        height: 222px;
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 6px;
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 100px;
+                                    height: 100px;
+                                    Avatar {
+                                        size: 100px;
+                                        img: St.me-avatar;
+                                        has-img: St.me-has-avatar;
+                                        letter: St.me-letter;
+                                        c1: #8E9BFF;
+                                        c2: #5B6CF0;
+                                    }
+                                    Rectangle {
+                                        width: 100px;
+                                        height: 100px;
+                                        border-radius: 50px;
+                                        background: ava.has-hover || St.avatar-busy ? #00000066 : transparent;
+                                        if ava.has-hover || St.avatar-busy: VerticalLayout {
+                                            alignment: center;
+                                            spacing: 2px;
+                                            HorizontalLayout {
+                                                alignment: center;
+                                                Image { source: @image-url("icons/photo_camera.svg"); width: 26px; colorize: white; }
+                                            }
+                                            Text {
+                                                text: St.avatar-busy ? "Загружаю…" : "Сменить";
+                                                color: white;
+                                                font-size: 12px;
+                                                font-weight: 600;
+                                                horizontal-alignment: center;
+                                            }
+                                        }
+                                    }
+                                    ava := TouchArea {
+                                        mouse-cursor: pointer;
+                                        enabled: !St.avatar-busy;
+                                        clicked => { Api.change-avatar(); }
+                                    }
+                                }
+                            }
+                            EpicNick {
+                                text: St.me-name;
+                                nick: St.me-nick;
+                                font-size: 18px;
+                                font-weight: 650;
+                                halign: center;
+                            }
+                            Text {
+                                text: St.me-balance != "" ? St.me-balance + " на балансе" : "";
+                                font-size: 13px;
+                                color: Theme.muted;
+                                horizontal-alignment: center;
+                            }
+                            // тонкая кнопка к цветным никам
+                            HorizontalLayout {
+                                alignment: center;
+                                padding-top: 2px;
+                                Rectangle {
+                                    height: 24px;
+                                    width: enl.preferred-width + 20px;
+                                    border-radius: 12px;
+                                    border-width: 1px;
+                                    border-color: ena.has-hover ? Theme.accent : Theme.line;
+                                    background: ena.has-hover ? Theme.accent-soft : transparent;
+                                    enl := HorizontalLayout {
+                                        x: 10px;
+                                        spacing: 5px;
+                                        Image { source: @image-url("icons/palette.svg"); width: 13px; colorize: Theme.accent; }
+                                        Text { text: St.me-nick.on ? "Мой цветной ник" : "Сделать ник цветным"; color: Theme.accent; font-size: 11.5px; font-weight: 600; vertical-alignment: center; }
+                                    }
+                                    ena := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { St.epic-open = true; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // аккаунты: переключение, добавление, удаление (всё хранится на этом ПК)
+                    for a in St.accounts: Rectangle {
+                        height: 52px;
+                        background: ara.has-hover ? Theme.hover : transparent;
+                        ara := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Api.switch-account(a.id); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 18px;
+                            padding-right: 10px;
+                            spacing: 14px;
+                            VerticalLayout {
+                                alignment: center;
+                                Avatar { size: 34px; img: a.avatar; has-img: a.has-avatar; letter: a.letter; c1: #8E9BFF; c2: #5B6CF0; }
+                            }
+                            Text {
+                                text: a.name;
+                                color: Theme.ink;
+                                font-size: 14.5px;
+                                font-weight: a.active ? 650 : 500;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            if a.active: VerticalLayout {
+                                alignment: center;
+                                Image { source: @image-url("icons/check_circle.svg"); width: 20px; colorize: Theme.accent; }
+                            }
+                            if !a.active && ara.has-hover: VerticalLayout {
+                                alignment: center;
+                                IconButton {
+                                    size: 30px;
+                                    icon-size: 17px;
+                                    icon: @image-url("icons/close.svg");
+                                    clicked => { Api.remove-account(a.id); }
+                                }
+                            }
+                        }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/add.svg");
+                        title: "Добавить аккаунт";
+                        has-toggle: false;
+                        clicked => { Api.add-account(); }
+                    }
+                    Rectangle { height: 1px; background: Theme.line; }
+                    SettingRow {
+                        icon: @image-url("icons/account_circle.svg");
+                        title: "Мой профиль";
+                        has-toggle: false;
+                        clicked => {
+                            St.settings-open = false;
+                            Api.open-profile(St.me-id);
+                        }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/receipt_long.svg");
+                        title: "Сделки и финансы";
+                        has-toggle: false;
+                        clicked => {
+                            St.settings-open = false;
+                            Api.open-deals(0);
+                        }
+                    }
+                    Rectangle { height: 1px; background: Theme.line; }
+                    SettingRow {
+                        icon: @image-url("icons/short_text.svg");
+                        title: "Шаблоны";
+                        hint: "Кнопки с готовыми ответами, бинды Alt+1…9 и поиск через /";
+                        has-toggle: false;
+                        TourMark { tid: "tpl-row"; }
+                        clicked => { St.tpl-open = true; St.tpl-tab = 0; }
+                    }
+                    Rectangle { height: 1px; background: Theme.line; }
+                    SettingRow {
+                        icon: @image-url("icons/notifications.svg");
+                        title: "Уведомления";
+                        hint: "Всплывающие окна о новых сообщениях";
+                        checked: St.notifications;
+                        toggled(v) => { Api.set-notifications(v); }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/volume_up.svg");
+                        title: "Звуковые уведомления";
+                        hint: "Звук играет, даже если всплывающие окна выключены";
+                        checked: St.sound;
+                        toggled(v) => { Api.set-sound(v); }
+                    }
+                    if St.notifications: SettingRow {
+                        icon: @image-url("icons/tune.svg");
+                        title: "Вид уведомлений";
+                        hint: St.pop-custom ? "Свои окна, " + (St.pop-corner == 0 ? "слева сверху" : St.pop-corner == 1 ? "справа сверху" : St.pop-corner == 2 ? "слева снизу" : "справа снизу") + ", до " + St.pop-count : "Уведомления Windows";
+                        has-toggle: false;
+                        clicked => { St.notes-open = true; }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/push_pin.svg");
+                        title: "Поверх всех окон";
+                        hint: "Удобно, если сжать окно до маленького";
+                        checked: St.on-top;
+                        toggled(v) => { Api.set-on-top(v); }
+                    }
+                    if St.tray-ok: SettingRow {
+                        icon: @image-url("icons/notifications_active.svg");
+                        title: "Работать в фоне";
+                        hint: "Крестик прячет окно в трей, сообщения и уведомления продолжают приходить";
+                        checked: St.keep-background;
+                        toggled(v) => { St.keep-background = v; Api.set-keep-background(v); }
+                    }
+                    if St.tray-ok: SettingRow {
+                        icon: @image-url("icons/login.svg");
+                        title: "Запускать вместе с Windows";
+                        hint: "Сразу в фоне, окно не открывается";
+                        checked: St.autostart;
+                        toggled(v) => { St.autostart = v; Api.set-autostart(v); }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/public.svg");
+                        title: "Общий чат FunPay в списке";
+                        checked: St.show-flood;
+                        toggled(v) => { Api.set-show-flood(v); }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/forum.svg");
+                        title: "Чат FunPay Tools в списке";
+                        checked: St.show-gchat;
+                        toggled(v) => { Api.set-show-gchat(v); }
+                    }
+                    Rectangle { height: 1px; background: Theme.line; }
+                    VerticalLayout {
+                        padding-left: 20px;
+                        padding-right: 20px;
+                        padding-top: 14px;
+                        padding-bottom: 14px;
+                        spacing: 10px;
+                        Text { text: "Тема"; color: Theme.ink; font-size: 14.5px; font-weight: 500; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            ThemeChip { text: "Как в системе"; on: St.tg-theme == "" && St.theme-mode == 0; clicked => { Api.set-theme(0); } }
+                            ThemeChip { text: "Светлая"; on: St.tg-theme == "" && St.theme-mode == 1; clicked => { Api.set-theme(1); } }
+                            ThemeChip { text: "Тёмная"; on: St.tg-theme == "" && St.theme-mode == 2; clicked => { Api.set-theme(2); } }
+                        }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/dark_mode.svg");
+                        title: St.tg-theme != "" ? "Тема: " + St.tg-theme : "Тема из Telegram";
+                        hint: St.tg-theme != "" ? "Нажмите, чтобы выбрать другую. Сбросить можно выбором темы выше." : "Файл .tdesktop-theme с компьютера или .attheme с телефона";
+                        has-toggle: false;
+                        clicked => { Api.import-theme(); }
+                    }
+                    Rectangle { height: 1px; background: Theme.line; }
+                    SettingRow {
+                        icon: @image-url("icons/system_update.svg");
+                        title: "Обновляться автоматически";
+                        hint: St.upd-status != "" ? St.upd-status : "Новые версии с GitHub ставятся сами, без ручного скачивания";
+                        checked: St.auto-update;
+                        toggled(v) => { St.auto-update = v; Api.set-auto-update(v); }
+                    }
+                    if St.upd-ready: HorizontalLayout {
+                        padding-left: 20px;
+                        padding-right: 20px;
+                        padding-bottom: 8px;
+                        PrimaryButton {
+                            text: "Перезапустить и обновить до " + St.upd-version;
+                            clicked => { Api.upd-restart(); }
+                        }
+                    }
+                    if !St.upd-ready: SettingRow {
+                        icon: @image-url("icons/refresh.svg");
+                        title: St.upd-busy ? "Проверяю…" : "Проверить обновления";
+                        has-toggle: false;
+                        clicked => { if (!St.upd-busy) { Api.upd-check(); } }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/help.svg");
+                        title: "Пройти обучение заново";
+                        has-toggle: false;
+                        clicked => { St.settings-open = false; Api.tour-start(); }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/edit_note.svg");
+                        title: "Журнал ошибок";
+                        hint: "Что ответил FunPay, если что-то не отправилось. Без ключей и паролей.";
+                        has-toggle: false;
+                        clicked => { Api.open-log(); }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/logout.svg");
+                        title: "Выйти из аккаунта";
+                        title-color: Theme.danger;
+                        has-toggle: false;
+                        clicked => { Api.logout(); }
+                    }
+                    Contacts { }
+                    Text {
+                        text: "FunPay Tools для Windows " + St.version;
+                        color: Theme.faint;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                    }
+                    Rectangle { height: 16px; }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================ просмотр картинок
+
+export component ImageViewer inherits Rectangle {
+    background: #000000e0;
+    TouchArea {
+        clicked => { St.viewer-open = false; }
+    }
+    if St.viewer-has: Image {
+        width: parent.width - 120px;
+        height: parent.height - 110px;
+        y: 44px;
+        source: St.viewer-img;
+        image-fit: contain;
+    }
+    if !St.viewer-has: Text {
+        text: "Загружаю…";
+        color: white;
+        font-size: 14px;
+    }
+    if St.viewer-count > 1: Text {
+        y: 14px;
+        text: (St.viewer-index + 1) + " из " + St.viewer-count;
+        color: #ffffffd0;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    if St.viewer-count > 1 && St.viewer-index > 0: Rectangle {
+        x: 14px;
+        width: 46px;
+        height: 46px;
+        border-radius: 23px;
+        background: lta.has-hover ? #ffffff30 : #ffffff18;
+        Image { source: @image-url("icons/chevron_left.svg"); width: 30px; colorize: white; }
+        lta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Api.viewer-step(-1); }
+        }
+    }
+    if St.viewer-count > 1 && St.viewer-index < St.viewer-count - 1: Rectangle {
+        x: parent.width - 60px;
+        width: 46px;
+        height: 46px;
+        border-radius: 23px;
+        background: rta.has-hover ? #ffffff30 : #ffffff18;
+        Image { source: @image-url("icons/chevron_right.svg"); width: 30px; colorize: white; }
+        rta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Api.viewer-step(1); }
+        }
+    }
+    HorizontalLayout {
+        y: parent.height - 56px;
+        height: 44px;
+        alignment: center;
+        spacing: 8px;
+        IconButton { icon: @image-url("icons/download.svg"); tint: white; clicked => { Api.save-image(St.viewer-url); } }
+        IconButton { icon: @image-url("icons/content_copy.svg"); tint: white; clicked => { Api.copy-image(St.viewer-url); } }
+        IconButton { icon: @image-url("icons/open_in_new.svg"); tint: white; clicked => { Api.open-external(St.viewer-url); } }
+        IconButton { icon: @image-url("icons/close.svg"); tint: white; clicked => { St.viewer-open = false; } }
+    }
+}
+
+// ============================================================ карточка собеседника
+
+component InfoRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> value;
+    in property <string> label;
+    height: 54px;
+    HorizontalLayout {
+        padding-left: 22px;
+        padding-right: 18px;
+        spacing: 22px;
+        Image { source: root.icon; width: 22px; colorize: Theme.muted; }
+        VerticalLayout {
+            alignment: center;
+            Text { text: root.value; color: Theme.ink; font-size: 14.5px; overflow: elide; }
+            Text { text: root.label; color: Theme.muted; font-size: 12.5px; }
+        }
+    }
+}
+
+export component UserCard inherits Rectangle {
+    property <bool> shown;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim {
+        dismiss => { St.card-open = false; }
+    }
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.95;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: min(400px, root.width - 32px);
+        height: min(cl.preferred-height, root.height - 40px);
+        border-radius: 14px;
+        background: Theme.panel;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: Theme.shadow;
+        clip: true;
+        TouchArea { }
+        cl := VerticalLayout {
+            HorizontalLayout {
+                height: 54px;
+                padding-left: 22px;
+                padding-right: 10px;
+                Text { text: "Информация"; color: Theme.ink; font-size: 16px; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { icon: @image-url("icons/close.svg"); clicked => { St.card-open = false; } }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 22px;
+                padding-right: 22px;
+                padding-bottom: 18px;
+                spacing: 18px;
+                Avatar {
+                    size: 72px;
+                    img: St.card-avatar;
+                    has-img: St.card-has-avatar;
+                    letter: St.card-letter;
+                    c1: St.card-c1;
+                    c2: St.card-c2;
+                    kind: St.cur-kind;
+                    // аватарка открывается в просмотрщике: там сохранить и копировать
+                    if St.card-has-avatar: TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Api.open-avatar(0); }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
+                    EpicNick { text: St.card-name; nick: St.card-nick; font-size: 18px; font-weight: 650; }
+                    Text { text: St.card-status; color: St.card-online ? Theme.accent : Theme.muted; font-size: 13.5px; overflow: elide; }
+                }
+            }
+            Rectangle { height: 8px; background: Theme.field; }
+            if St.card-loading: Text {
+                text: "Загружаю…";
+                color: Theme.muted;
+                font-size: 13px;
+                horizontal-alignment: center;
+                height: 48px;
+                vertical-alignment: center;
+            }
+            // описание из FunPay Tools, как «О себе»
+            if St.card-desc != "": Rectangle {
+                cdl := HorizontalLayout {
+                    padding-left: 22px;
+                    padding-right: 18px;
+                    padding-top: 10px;
+                    padding-bottom: 10px;
+                    spacing: 22px;
+                    VerticalLayout {
+                        alignment: start;
+                        padding-top: 2px;
+                        Image { source: @image-url("icons/info.svg"); width: 22px; colorize: Theme.muted; }
+                    }
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text { text: St.card-desc; color: Theme.ink; font-size: 14.5px; wrap: word-wrap; }
+                        Text { text: "Описание"; color: Theme.muted; font-size: 12.5px; }
+                    }
+                }
+            }
+            if St.card-id != "": InfoRow { icon: @image-url("icons/badge.svg"); value: St.card-id; label: "ID на FunPay"; }
+            if St.card-reg != "": InfoRow { icon: @image-url("icons/calendar_month.svg"); value: St.card-reg; label: "Дата регистрации"; }
+            if St.card-rating != "": InfoRow { icon: @image-url("icons/star.svg"); value: St.card-rating; label: St.card-reviews; }
+            Rectangle { height: 8px; background: Theme.field; }
+            if St.cur-kind == 0: SettingRow {
+                icon: St.cur-muted ? @image-url("icons/notifications_off.svg") : @image-url("icons/notifications.svg");
+                title: "Уведомления";
+                checked: !St.cur-muted;
+                toggled(v) => { Api.chat-menu(St.cur-id, St.cur-kind, v ? "unmute" : "mute", ""); }
+            }
+            if St.card-id != "": SettingRow {
+                icon: @image-url("icons/account_circle.svg");
+                title: "Открыть профиль";
+                title-color: Theme.accent;
+                has-toggle: false;
+                clicked => {
+                    St.card-open = false;
+                    Api.open-profile(St.card-id);
+                }
+            }
+            if St.cur-kind != 3: SettingRow {
+                icon: @image-url("icons/open_in_new.svg");
+                title: "Открыть на FunPay";
+                title-color: Theme.accent;
+                has-toggle: false;
+                clicked => {
+                    St.card-open = false;
+                    Api.chat-menu(St.cur-id, St.cur-kind, "web", "");
+                }
+            }
+            Rectangle { height: 6px; }
+        }
+    }
+}
+
+// ============================================================ общий заголовок экранов
+
+component PaneHeader inherits Rectangle {
+    in property <string> title;
+    in property <string> web;
+    height: 52px;
+    background: Theme.panel;
+    HorizontalLayout {
+        padding-left: 4px;
+        padding-right: 6px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            IconButton { icon: @image-url("icons/arrow_back.svg"); clicked => { Api.pane-back(); } }
+        }
+        Text { text: root.title; color: Theme.ink; font-size: 15.5px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        if root.web != "": VerticalLayout {
+            alignment: center;
+            IconButton { icon: @image-url("icons/open_in_new.svg"); clicked => { Api.open-url(root.web); } }
+        }
+    }
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+}
+
+component Stars inherits HorizontalLayout {
+    in property <int> rating;
+    in property <length> size: 15px;
+    spacing: 1px;
+    for i in [1, 2, 3, 4, 5]: Image {
+        source: i <= root.rating ? @image-url("icons/star-fill.svg") : @image-url("icons/star.svg");
+        width: root.size;
+        colorize: i <= root.rating ? #F5A524 : Theme.faint;
+    }
+}
+
+component Stat inherits Rectangle {
+    in property <string> value;
+    in property <string> label;
+    height: 62px;
+    border-radius: 12px;
+    background: Theme.field;
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        Text { text: root.value; color: Theme.ink; font-size: 16px; font-weight: 650; horizontal-alignment: center; overflow: elide; }
+        Text { text: root.label; color: Theme.muted; font-size: 12px; horizontal-alignment: center; overflow: elide; }
+    }
+}
+
+// ============================================================ профиль
+
+// ============================================================ своё описание
+
+export component DescDialog inherits Rectangle {
+    property <bool> shown;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim {
+        dismiss => { if (!St.desc-busy) { St.desc-open = false; } }
+    }
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.95;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: min(440px, root.width - 32px);
+        height: dl.preferred-height;
+        border-radius: 14px;
+        background: Theme.panel;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: Theme.shadow;
+        TouchArea { }
+        dl := VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+            Text { text: "Описание профиля"; color: Theme.ink; font-size: 17px; font-weight: 650; }
+            Text {
+                text: "Его видят пользователи FunPay Tools: в расширении, приложении и здесь.";
+                color: Theme.muted;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+            Rectangle {
+                height: 150px;
+                border-radius: 10px;
+                background: Theme.field;
+                border-width: dtx.has-focus ? 1.5px : 0px;
+                border-color: Theme.accent;
+                FocusScope {
+                    x: 12px;
+                    y: 10px;
+                    width: parent.width - 24px;
+                    height: parent.height - 20px;
+                    capture-key-pressed(e) => {
+                        if (e.modifiers.control && (e.text == "v" || e.text == "V" || e.text == "м" || e.text == "М")) {
+                            dtx.text = dtx.text + Api.paste-clipboard();
+                            dtx.set-selection-offsets(100000, 100000);
+                            return accept;
+                        }
+                        if (e.modifiers.control && (e.text == "c" || e.text == "C" || e.text == "с" || e.text == "С")) {
+                            if (dtx.anchor-position-byte-offset != dtx.cursor-position-byte-offset) {
+                                Api.copy-range(dtx.text, dtx.anchor-position-byte-offset, dtx.cursor-position-byte-offset);
+                            }
+                            return accept;
+                        }
+                        if (e.modifiers.control && (e.text == "x" || e.text == "X" || e.text == "ч" || e.text == "Ч")) {
+                            if (dtx.anchor-position-byte-offset != dtx.cursor-position-byte-offset) {
+                                let lo = min(dtx.anchor-position-byte-offset, dtx.cursor-position-byte-offset);
+                                dtx.text = Api.cut-range(dtx.text, dtx.anchor-position-byte-offset, dtx.cursor-position-byte-offset);
+                                dtx.set-selection-offsets(lo, lo);
+                            }
+                            return accept;
+                        }
+                        if (e.modifiers.control && (e.text == "a" || e.text == "A" || e.text == "ф" || e.text == "Ф")) {
+                            dtx.select-all();
+                            return accept;
+                        }
+                        return reject;
+                    }
+                    Flickable {
+                        width: parent.width;
+                        height: parent.height;
+                        content-height: max(self.height, dtx.preferred-height);
+                        dtx := TextInput {
+                            width: parent.width;
+                            height: max(parent.height, self.preferred-height);
+                            wrap: word-wrap;
+                            single-line: false;
+                            font-size: 14.5px;
+                            color: Theme.ink;
+                            enabled: !St.desc-busy;
+                            text: St.desc-draft;
+                            init => { self.focus(); self.set-selection-offsets(100000, 100000); }
+                        }
+                    }
+                }
+                if dtx.text == "": Text {
+                    x: 12px;
+                    y: 10px;
+                    text: "Пара слов о себе или о том, что продаёте";
+                    color: Theme.faint;
+                    font-size: 14.5px;
+                }
+            }
+            if St.desc-status != "": Text {
+                text: St.desc-status;
+                color: St.desc-busy ? Theme.muted : Theme.danger;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+            Text {
+                text: "В первый раз приложение подтвердит, что аккаунт ваш: на минуту создаст лот «FPT Verify» и сразу его удалит.";
+                color: Theme.faint;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                PrimaryButton {
+                    width: 100px;
+                    text: "Отмена";
+                    flat: true;
+                    enabled: !St.desc-busy;
+                    clicked => { St.desc-open = false; }
+                }
+                PrimaryButton {
+                    width: 150px;
+                    text: "Сохранить";
+                    busy: St.desc-busy;
+                    clicked => { if (!St.desc-busy) { Api.desc-save(dtx.text); } }
+                }
+            }
+        }
+    }
+}
+
+export component ProfilePane inherits Rectangle {
+    property <length> cw: root.width - 40px - 14px;
+    background: Theme.panel;
+    VerticalLayout {
+        PaneHeader {
+            title: "Профиль";
+            web: St.pf-id != "" ? "https://funpay.com/users/" + St.pf-id + "/" : "";
+        }
+        if St.pf-loading: Rectangle {
+            vertical-stretch: 1;
+            Text { text: "Загружаю профиль…"; color: Theme.muted; font-size: 14px; }
+        }
+        if !St.pf-loading && St.pf-error != "": Rectangle {
+            vertical-stretch: 1;
+            Text { text: St.pf-error; color: Theme.danger; font-size: 14px; wrap: word-wrap; width: parent.width - 40px; horizontal-alignment: center; }
+        }
+        if !St.pf-loading && St.pf-error == "": ScrollView {
+            content-width: self.visible-width;
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 22px;
+                padding-bottom: 24px;
+                spacing: 14px;
+                // баннер из описания FunPay Tools, аватарка заходит на него снизу
+                if St.pf-has-banner: Rectangle {
+                    height: 186px;
+                    Rectangle {
+                        y: 0;
+                        height: 136px;
+                        border-radius: 14px;
+                        clip: true;
+                        background: Theme.field;
+                        Image { width: parent.width; height: parent.height; source: St.pf-banner; image-fit: cover; }
+                    }
+                    Rectangle {
+                        x: (parent.width - self.width) / 2;
+                        y: 136px - 50px;
+                        width: 100px;
+                        height: 100px;
+                        border-radius: 50px;
+                        background: Theme.panel;
+                        Avatar {
+                            size: 92px;
+                            img: St.pf-avatar;
+                            has-img: St.pf-has-avatar;
+                            letter: St.pf-letter;
+                            c1: St.pf-c1;
+                            c2: St.pf-c2;
+                            if St.pf-has-avatar: TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Api.open-avatar(1); }
+                            }
+                        }
+                    }
+                }
+                if !St.pf-has-banner: HorizontalLayout {
+                    alignment: center;
+                    Avatar {
+                        size: 96px;
+                        img: St.pf-avatar;
+                        has-img: St.pf-has-avatar;
+                        letter: St.pf-letter;
+                        c1: St.pf-c1;
+                        c2: St.pf-c2;
+                        if St.pf-has-avatar: TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Api.open-avatar(1); }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 3px;
+                    EpicNick { text: St.pf-name; nick: St.pf-nick; font-size: 21px; font-weight: 650; halign: center; }
+                    Text { text: St.pf-status; color: St.pf-online ? Theme.accent : Theme.muted; font-size: 13.5px; horizontal-alignment: center; wrap: word-wrap; width: root.cw; }
+                }
+                if St.pf-desc != "": Rectangle {
+                    border-radius: 12px;
+                    background: Theme.field;
+                    dsl := VerticalLayout {
+                        padding: 12px;
+                        spacing: 4px;
+                        Text { text: "Описание"; color: Theme.muted; font-size: 12.5px; }
+                        TextInput {
+                            text: St.pf-desc;
+                            read-only: true;
+                            wrap: word-wrap;
+                            width: root.cw - 24px;
+                            single-line: false;
+                            color: Theme.ink;
+                            font-size: 14px;
+                            selection-background-color: Theme.accent.with-alpha(0.35);
+                            selection-foreground-color: Theme.ink;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Stat { value: St.pf-rating != "" ? St.pf-rating + " из 5" : "нет"; label: "рейтинг"; }
+                    Stat { value: St.pf-reviews-count != "" ? St.pf-reviews-count : "0"; label: "отзывы"; }
+                    Stat { value: St.pf-reg-ago != "" ? St.pf-reg-ago : St.pf-reg; label: "на FunPay"; }
+                }
+                if St.pf-can-write && !St.pf-is-me: HorizontalLayout {
+                    alignment: center;
+                    PrimaryButton {
+                        width: 220px;
+                        text: "Написать";
+                        clicked => { Api.pf-write(); }
+                    }
+                }
+                if St.pf-is-me: HorizontalLayout {
+                    alignment: center;
+                    PrimaryButton {
+                        width: 220px;
+                        flat: true;
+                        text: St.pf-desc != "" ? "Изменить описание" : "Добавить описание";
+                        clicked => { Api.desc-edit(); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 0px;
+                    for t[i] in ["Лоты", "Отзывы"]: Rectangle {
+                        height: 40px;
+                        Text {
+                            text: t;
+                            color: St.pf-tab == i ? Theme.accent : Theme.muted;
+                            font-size: 14.5px;
+                            font-weight: 600;
+                        }
+                        Rectangle {
+                            y: parent.height - 2px;
+                            height: 2px;
+                            background: St.pf-tab == i ? Theme.accent : Theme.line;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { St.pf-tab = i; }
+                        }
+                    }
+                }
+                if St.pf-tab == 0 && St.pf-offers.length == 0: Text {
+                    text: "Лотов нет";
+                    color: Theme.muted;
+                    font-size: 13.5px;
+                    horizontal-alignment: center;
+                }
+                if St.pf-tab == 0: VerticalLayout {
+                    spacing: 2px;
+                    for o in St.pf-offers: Rectangle {
+                        height: o.header ? 38px : ol.preferred-height;
+                        border-radius: 10px;
+                        background: !o.header && ota.has-hover ? Theme.hover : transparent;
+                        if o.header: Text {
+                            x: 4px;
+                            y: 14px;
+                            text: o.title;
+                            color: Theme.accent;
+                            font-size: 13.5px;
+                            font-weight: 650;
+                        }
+                        ol := HorizontalLayout {
+                            visible: !o.header;
+                            padding: 10px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text { text: o.title; color: Theme.ink; font-size: 14px; wrap: word-wrap; width: root.cw - 20px - 12px - 96px; }
+                                if o.server != "": Text { text: o.server; color: Theme.muted; font-size: 12.5px; }
+                            }
+                            Text { text: o.price; color: Theme.ink; font-size: 14px; font-weight: 650; vertical-alignment: center; }
+                        }
+                        ota := TouchArea {
+                            enabled: !o.header;
+                            mouse-cursor: pointer;
+                            clicked => { Api.open-url(o.url); }
+                        }
+                    }
+                }
+                if St.pf-tab == 1 && St.pf-reviews.length == 0: Text {
+                    text: "Отзывов нет";
+                    color: Theme.muted;
+                    font-size: 13.5px;
+                    horizontal-alignment: center;
+                }
+                if St.pf-tab == 1: VerticalLayout {
+                    spacing: 10px;
+                    for r in St.pf-reviews: Rectangle {
+                        border-radius: 12px;
+                        background: r.order != "" && rta.has-hover ? Theme.hover : Theme.field;
+                        // на своей странице отзыв ведёт к заказу
+                        rta := TouchArea {
+                            enabled: r.order != "";
+                            mouse-cursor: r.order != "" ? pointer : default;
+                            clicked => { Api.open-order(r.order); }
+                        }
+                        rl := VerticalLayout {
+                            padding: 12px;
+                            spacing: 5px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Stars { rating: r.rating; }
+                                if r.author != "": Text { text: r.author; color: Theme.ink; font-size: 13px; font-weight: 600; overflow: elide; vertical-alignment: center; }
+                                Text { text: r.date; color: Theme.muted; font-size: 12.5px; horizontal-stretch: 1; horizontal-alignment: right; overflow: elide; }
+                            }
+                            if r.order != "": Text { text: "Заказ #" + r.order + " ›"; color: Theme.accent; font-size: 12.5px; font-weight: 550; }
+                            if r.detail != "": Text { text: r.detail; color: Theme.muted; font-size: 12.5px; wrap: word-wrap; width: root.cw - 24px; }
+                            if r.text != "": Text { text: r.text; color: Theme.ink; font-size: 14px; wrap: word-wrap; width: root.cw - 24px; }
+                            if r.reply != "": Rectangle {
+                                border-radius: 8px;
+                                background: Theme.accent.with-alpha(0.09);
+                                rpl := VerticalLayout {
+                                    padding: 8px;
+                                    spacing: 2px;
+                                    Text { text: "Ответ продавца"; color: Theme.accent; font-size: 12.5px; font-weight: 600; }
+                                    Text { text: r.reply; color: Theme.ink; font-size: 13.5px; wrap: word-wrap; width: root.cw - 40px; }
+                                }
+                            }
+                        }
+                    }
+                    if St.pf-more: HorizontalLayout {
+                        alignment: center;
+                        PrimaryButton {
+                            width: 200px;
+                            flat: true;
+                            text: St.pf-more-loading ? "Загружаю…" : "Показать ещё";
+                            clicked => { Api.pf-more-reviews(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================ заказ
+
+component OrderDialog inherits Rectangle {
+    property <bool> shown;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    property <int> rating: St.od-rating > 0 ? St.od-rating : 5;
+    Dim {
+        dismiss => { St.od-dialog = 0; }
+    }
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.95;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: min(380px, root.width - 32px);
+        height: dl.preferred-height;
+        border-radius: 14px;
+        background: Theme.panel;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: Theme.shadow;
+        TouchArea { }
+        dl := VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+            Text {
+                text: St.od-dialog == 1 ? "Вернуть деньги?" : St.od-dialog == 2 ? "Подтвердить выполнение?" : St.od-dialog == 3 ? (St.od-reply != "" ? "Изменить ответ" : "Ответ на отзыв") : St.od-dialog == 5 ? "Удалить ответ?" : St.od-dialog == 6 ? "Удалить отзыв?" : (St.od-has-review ? "Изменить отзыв" : "Ваш отзыв");
+                color: Theme.ink;
+                font-size: 17px;
+                font-weight: 650;
+            }
+            if St.od-dialog == 1 || St.od-dialog == 2 || St.od-dialog >= 5: Text {
+                text: St.od-dialog == 1 ? "Деньги за заказ #" + St.od-id + " вернутся покупателю. Отменить это нельзя."
+                    : St.od-dialog == 2 ? "Продавец получит деньги за заказ #" + St.od-id + ". Отменить это нельзя."
+                    : St.od-dialog == 5 ? "Ваш ответ на отзыв к заказу #" + St.od-id + " исчезнет." : "Ваш отзыв к заказу #" + St.od-id + " исчезнет.";
+                color: Theme.muted;
+                font-size: 14px;
+                wrap: word-wrap;
+            }
+            if St.od-dialog == 4: HorizontalLayout {
+                spacing: 4px;
+                for i in [1, 2, 3, 4, 5]: Image {
+                    source: i <= root.rating ? @image-url("icons/star-fill.svg") : @image-url("icons/star.svg");
+                    width: 30px;
+                    colorize: i <= root.rating ? #F5A524 : Theme.faint;
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.rating = i; }
+                    }
+                }
+            }
+            Rectangle {
+                visible: St.od-dialog == 3 || St.od-dialog == 4;
+                height: St.od-dialog == 3 || St.od-dialog == 4 ? 120px : 0px;
+                border-radius: 10px;
+                background: Theme.field;
+                FocusScope {
+                    x: 12px;
+                    y: 10px;
+                    width: parent.width - 24px;
+                    height: parent.height - 20px;
+                    capture-key-pressed(e) => {
+                        if (e.modifiers.control && (e.text == "v" || e.text == "V" || e.text == "м" || e.text == "М")) {
+                            txt.text = txt.text + Api.paste-clipboard();
+                            txt.set-selection-offsets(100000, 100000);
+                            return accept;
+                        }
+                        if (e.modifiers.control && (e.text == "c" || e.text == "C" || e.text == "с" || e.text == "С")) {
+                            if (txt.anchor-position-byte-offset != txt.cursor-position-byte-offset) {
+                                Api.copy-range(txt.text, txt.anchor-position-byte-offset, txt.cursor-position-byte-offset);
+                            }
+                            return accept;
+                        }
+                        if (e.modifiers.control && (e.text == "x" || e.text == "X" || e.text == "ч" || e.text == "Ч")) {
+                            if (txt.anchor-position-byte-offset != txt.cursor-position-byte-offset) {
+                                let lo = min(txt.anchor-position-byte-offset, txt.cursor-position-byte-offset);
+                                txt.text = Api.cut-range(txt.text, txt.anchor-position-byte-offset, txt.cursor-position-byte-offset);
+                                txt.set-selection-offsets(lo, lo);
+                            }
+                            return accept;
+                        }
+                        if (e.modifiers.control && (e.text == "a" || e.text == "A" || e.text == "ф" || e.text == "Ф")) {
+                            txt.select-all();
+                            return accept;
+                        }
+                        return reject;
+                    }
+                    txt := TextInput {
+                        width: parent.width;
+                        height: parent.height;
+                        wrap: word-wrap;
+                        single-line: false;
+                        font-size: 14.5px;
+                        color: Theme.ink;
+                        text: St.od-dialog == 4 ? St.od-review : St.od-dialog == 3 ? St.od-reply : "";
+                        init => { self.focus(); self.set-selection-offsets(100000, 100000); }
+                    }
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                PrimaryButton {
+                    width: 100px;
+                    text: "Отмена";
+                    flat: true;
+                    clicked => { St.od-dialog = 0; }
+                }
+                PrimaryButton {
+                    width: 150px;
+                    text: St.od-dialog == 1 ? "Вернуть" : St.od-dialog == 2 ? "Подтвердить" : St.od-dialog >= 5 ? "Удалить" : "Сохранить";
+                    clicked => {
+                        if (St.od-dialog == 1) { Api.od-action("refund", "", 0); }
+                        if (St.od-dialog == 2) { Api.od-action("confirm", "", 0); }
+                        if (St.od-dialog == 3) { Api.od-action("review-reply", txt.text, 5); }
+                        if (St.od-dialog == 4) { Api.od-action("review", txt.text, root.rating); }
+                        if (St.od-dialog == 5 || St.od-dialog == 6) { Api.od-action("review-delete", "", 0); }
+                        St.od-dialog = 0;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component OrderPane inherits Rectangle {
+    // ширина колонки: тексту с переносами нужна явная ширина, иначе прокрутка считает его в одну строку
+    property <length> cw: root.width - 40px - 14px;
+    background: Theme.panel;
+    property <bool> closed: St.od-status == "Закрыт" || St.od-status == "Closed";
+    VerticalLayout {
+        PaneHeader {
+            title: St.od-id != "" ? "Заказ #" + St.od-id : "Заказ";
+            web: St.od-id != "" ? "https://funpay.com/orders/" + St.od-id + "/" : "";
+        }
+        if St.od-loading: Rectangle {
+            vertical-stretch: 1;
+            Text { text: "Загружаю заказ…"; color: Theme.muted; font-size: 14px; }
+        }
+        if !St.od-loading && St.od-error != "": Rectangle {
+            vertical-stretch: 1;
+            Text { text: St.od-error; color: Theme.danger; font-size: 14px; wrap: word-wrap; width: parent.width - 40px; horizontal-alignment: center; }
+        }
+        if !St.od-loading && St.od-error == "": ScrollView {
+            content-width: self.visible-width;
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                padding: 20px;
+                spacing: 14px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle {
+                        height: 26px;
+                        width: stt.preferred-width + 20px;
+                        border-radius: 13px;
+                        background: root.closed ? Theme.ok.with-alpha(0.15) : St.od-status == "Возврат" ? Theme.danger.with-alpha(0.13) : Theme.accent.with-alpha(0.14);
+                        stt := Text {
+                            text: St.od-status != "" ? St.od-status : "Заказ";
+                            color: root.closed ? Theme.ok : St.od-status == "Возврат" ? Theme.danger : Theme.accent;
+                            font-size: 13px;
+                            font-weight: 650;
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text { text: St.od-price; color: Theme.ink; font-size: 22px; font-weight: 700; vertical-alignment: center; }
+                }
+                VerticalLayout {
+                    spacing: 4px;
+                    Text { text: St.od-game; color: Theme.muted; font-size: 13px; wrap: word-wrap; width: root.cw; }
+                    Text { text: St.od-desc; color: Theme.ink; font-size: 15.5px; font-weight: 600; wrap: word-wrap; width: root.cw; }
+                }
+                if St.od-peer != "": Rectangle {
+                    height: 60px;
+                    border-radius: 12px;
+                    background: pta.has-hover ? Theme.hover : Theme.field;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 10px;
+                        spacing: 12px;
+                        VerticalLayout {
+                            alignment: center;
+                            Avatar { size: 40px; img: St.od-peer-avatar; has-img: St.od-peer-has-avatar; letter: St.od-peer-letter; }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text { text: St.od-peer; color: Theme.ink; font-size: 14.5px; font-weight: 600; overflow: elide; }
+                            Text { text: St.od-is-buyer ? "Продавец" : "Покупатель"; color: Theme.muted; font-size: 12.5px; }
+                        }
+                        Image { source: @image-url("icons/chevron_right.svg"); width: 22px; colorize: Theme.faint; }
+                    }
+                    pta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Api.open-profile(St.od-peer-id); }
+                    }
+                }
+                if St.od-params.length > 0: Rectangle {
+                    border-radius: 12px;
+                    background: Theme.field;
+                    pl := VerticalLayout {
+                        padding: 12px;
+                        spacing: 10px;
+                        for kv in St.od-params: VerticalLayout {
+                            spacing: 2px;
+                            Text { text: kv.k; color: Theme.muted; font-size: 12.5px; }
+                            Text { text: kv.v; color: Theme.ink; font-size: 14px; wrap: word-wrap; width: root.cw - 24px; }
+                        }
+                    }
+                }
+                // отзыв и ответ: действия маленькими ссылками рядом, как на сайте
+                if St.od-has-review || (St.od-is-buyer && !St.od-can-confirm): Rectangle {
+                    border-radius: 12px;
+                    background: Theme.field;
+                    rvl := VerticalLayout {
+                        padding: 12px;
+                        spacing: 6px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: "Отзыв"; color: Theme.ink; font-size: 14px; font-weight: 650; vertical-alignment: center; }
+                            if St.od-has-review: Stars { rating: St.od-rating; }
+                            Rectangle { horizontal-stretch: 1; }
+                            if St.od-is-buyer && !St.od-can-confirm: LinkText {
+                                text: St.od-has-review ? "Изменить" : "Оставить отзыв";
+                                font-size: 13px;
+                                clicked => { St.od-dialog = 4; }
+                            }
+                            if St.od-is-buyer && St.od-has-review: LinkText {
+                                text: "Удалить";
+                                font-size: 13px;
+                                color: Theme.danger;
+                                clicked => { St.od-dialog = 6; }
+                            }
+                        }
+                        if !St.od-has-review: Text { text: "Покупатель ещё не оставил отзыв"; color: Theme.muted; font-size: 13.5px; wrap: word-wrap; width: root.cw - 24px; }
+                        if St.od-review != "": Text { text: St.od-review; color: Theme.ink; font-size: 14px; wrap: word-wrap; width: root.cw - 24px; }
+                        if St.od-reply != "": Rectangle {
+                            border-radius: 8px;
+                            background: Theme.accent.with-alpha(0.09);
+                            orp := VerticalLayout {
+                                padding: 9px;
+                                spacing: 3px;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Text { text: "Ответ продавца"; color: Theme.accent; font-size: 12.5px; font-weight: 600; horizontal-stretch: 1; vertical-alignment: center; }
+                                    if St.od-reply-mine: LinkText { text: "Изменить"; font-size: 12.5px; clicked => { St.od-dialog = 3; } }
+                                    if St.od-reply-mine: LinkText { text: "Удалить"; font-size: 12.5px; color: Theme.danger; clicked => { St.od-dialog = 5; } }
+                                }
+                                Text { text: St.od-reply; color: Theme.ink; font-size: 13.5px; wrap: word-wrap; width: root.cw - 42px; }
+                            }
+                        }
+                        if !St.od-is-buyer && St.od-has-review && St.od-reply == "": HorizontalLayout {
+                            alignment: start;
+                            LinkText { text: "Ответить на отзыв"; font-size: 13px; clicked => { St.od-dialog = 3; } }
+                        }
+                    }
+                }
+                // основные действия одной строкой
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    if !St.od-is-buyer && St.od-can-refund: PrimaryButton {
+                        width: 170px;
+                        height: 38px;
+                        text: "Вернуть деньги";
+                        busy: St.od-busy;
+                        clicked => { St.od-dialog = 1; }
+                    }
+                    if St.od-is-buyer && St.od-can-confirm: PrimaryButton {
+                        width: 210px;
+                        height: 38px;
+                        text: "Подтвердить выполнение";
+                        busy: St.od-busy;
+                        clicked => { St.od-dialog = 2; }
+                    }
+                    if St.od-peer-id != "": PrimaryButton {
+                        width: 130px;
+                        height: 38px;
+                        text: "Написать";
+                        flat: true;
+                        clicked => { Api.od-action("chat", "", 0); }
+                    }
+                }
+            }
+        }
+    }
+    if St.od-dialog != 0: OrderDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+// ============================================================ отправка картинок
+
+export component SendBox inherits Rectangle {
+    property <bool> shown;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim {
+        dismiss => { Api.sendbox-cancel(); }
+    }
+    property <length> cw: min(440px, root.width - 32px);
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.95;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: root.cw;
+        height: min(bl.preferred-height, root.height - 40px);
+        border-radius: 14px;
+        background: Theme.panel;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: Theme.shadow;
+        TouchArea { }
+        bl := VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            HorizontalLayout {
+                Text {
+                    text: St.sendbox-count == 1 ? "Отправить изображение"
+                        : (mod(St.sendbox-count, 10) >= 2 && mod(St.sendbox-count, 10) <= 4 && (mod(St.sendbox-count, 100) < 12 || mod(St.sendbox-count, 100) > 14))
+                            ? "Отправить " + St.sendbox-count + " изображения" : "Отправить " + St.sendbox-count + " изображений";
+                    color: Theme.ink;
+                    font-size: 16px;
+                    font-weight: 650;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                IconButton {
+                    size: 34px;
+                    icon-size: 20px;
+                    icon: @image-url("icons/add_photo_alternate.svg");
+                    clicked => { Api.sendbox-add(); }
+                }
+            }
+            Album {
+                tiles: St.sendbox-tiles;
+                ratio: min(St.sendbox-ratio, 1.1);
+                w: root.cw - 32px;
+                removable: true;
+                remove(i) => { Api.sendbox-remove(i); }
+            }
+            Rectangle {
+                height: 40px;
+                border-radius: 10px;
+                background: Theme.field;
+                cap := TextInput {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    height: parent.height;
+                    single-line: true;
+                    vertical-alignment: center;
+                    font-size: 14.5px;
+                    color: Theme.ink;
+                    accepted => { Api.sendbox-send(self.text); }
+                }
+                if cap.text == "": Text {
+                    x: 12px;
+                    text: "Добавить подпись…";
+                    color: Theme.faint;
+                    font-size: 14.5px;
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                PrimaryButton {
+                    width: 100px;
+                    text: "Отмена";
+                    flat: true;
+                    clicked => { Api.sendbox-cancel(); }
+                }
+                PrimaryButton {
+                    width: 130px;
+                    text: "Отправить";
+                    enabled: St.sendbox-count > 0;
+                    clicked => { Api.sendbox-send(cap.text); }
+                }
+            }
+        }
+    }
+    init => { cap.focus(); }
+}

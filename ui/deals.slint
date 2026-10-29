@@ -1,0 +1,245 @@
+// Продажи, покупки и финансы.
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { TradeRow, TxnRow } from "types.slint";
+import { IconButton, Avatar, PrimaryButton } from "widgets.slint";
+
+component FilterChip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    callback clicked();
+    height: 30px;
+    width: t.preferred-width + 24px;
+    border-radius: 15px;
+    background: on ? Theme.accent : ta.has-hover ? Theme.hover : Theme.field;
+    t := Text {
+        text: root.text;
+        color: root.on ? Theme.on-accent : Theme.ink;
+        font-size: 13px;
+        font-weight: 550;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component TradeItemView inherits Rectangle {
+    in property <TradeRow> item;
+    height: 66px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Avatar { size: 40px; img: item.avatar; has-img: item.has-avatar; letter: item.letter; c1: item.c1; c2: item.c2; }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 3px;
+            Text { text: item.desc != "" ? item.desc : "Заказ #" + item.id; color: Theme.ink; font-size: 14px; font-weight: 600; overflow: elide; }
+            Text {
+                text: (item.peer != "" ? item.peer + ", " : "") + item.date;
+                color: Theme.muted;
+                font-size: 12.5px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            Text { text: item.price; color: Theme.ink; font-size: 14px; font-weight: 650; horizontal-alignment: right; }
+            Text {
+                text: item.status;
+                color: item.state == 1 ? Theme.accent : item.state == 2 ? Theme.danger : Theme.ok;
+                font-size: 12.5px;
+                font-weight: 550;
+                horizontal-alignment: right;
+            }
+        }
+    }
+    Rectangle { x: 68px; y: parent.height - 1px; width: parent.width - 68px; height: 1px; background: Theme.line; }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Api.open-order(item.id); }
+    }
+}
+
+component TxnItemView inherits Rectangle {
+    in property <TxnRow> item;
+    height: 60px;
+    background: ta.has-hover && item.order != "" ? Theme.hover : transparent;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 3px;
+            Text { text: item.title; color: item.state == 2 ? Theme.muted : Theme.ink; font-size: 14px; font-weight: 550; overflow: elide; }
+            Text { text: item.date + (item.payment != "" ? ", " + item.payment : ""); color: Theme.muted; font-size: 12.5px; overflow: elide; }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            Text {
+                text: item.amount;
+                color: item.state == 2 ? Theme.faint : item.income ? Theme.ok : Theme.ink;
+                font-size: 14.5px;
+                font-weight: 650;
+                horizontal-alignment: right;
+            }
+            if item.state != 0: Text {
+                text: item.state == 1 ? "в ожидании" : "отменено";
+                color: item.state == 1 ? #E39A2D : Theme.faint;
+                font-size: 12px;
+                horizontal-alignment: right;
+            }
+        }
+    }
+    Rectangle { x: 16px; y: parent.height - 1px; width: parent.width - 16px; height: 1px; background: Theme.line; }
+    ta := TouchArea {
+        mouse-cursor: item.order != "" ? pointer : default;
+        clicked => { if (item.order != "") { Api.open-order(item.order); } }
+    }
+}
+
+export component DealsPane inherits Rectangle {
+    background: Theme.panel;
+    property <bool> fin: St.deals-tab == 2;
+    VerticalLayout {
+        // шапка
+        Rectangle {
+            height: 52px;
+            HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 6px;
+                spacing: 8px;
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { icon: @image-url("icons/arrow_back.svg"); clicked => { Api.pane-back(); } }
+                }
+                Text { text: "Сделки"; color: Theme.ink; font-size: 15.5px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: @image-url("icons/open_in_new.svg");
+                        clicked => {
+                            Api.open-url(St.deals-tab == 0 ? "https://funpay.com/orders/trade" : St.deals-tab == 1 ? "https://funpay.com/orders/" : "https://funpay.com/account/balance");
+                        }
+                    }
+                }
+            }
+        }
+        // вкладки
+        HorizontalLayout {
+            for t[i] in ["Продажи", "Покупки", "Финансы"]: Rectangle {
+                height: 40px;
+                Text { text: t; color: St.deals-tab == i ? Theme.accent : Theme.muted; font-size: 14.5px; font-weight: 600; }
+                Rectangle { y: parent.height - 2px; height: 2px; background: St.deals-tab == i ? Theme.accent : Theme.line; }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Api.deals-tab(i); }
+                }
+            }
+        }
+        // фильтр статуса для продаж и покупок
+        if !root.fin: Flickable {
+            height: 46px;
+            content-width: chips.preferred-width;
+            chips := HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                spacing: 6px;
+                FilterChip { text: "Все"; on: St.deals-state == ""; clicked => { Api.deals-filter(""); } }
+                FilterChip { text: "Оплачен"; on: St.deals-state == "paid"; clicked => { Api.deals-filter("paid"); } }
+                FilterChip { text: "Закрыт"; on: St.deals-state == "closed"; clicked => { Api.deals-filter("closed"); } }
+                FilterChip { text: "Возврат"; on: St.deals-state == "refunded"; clicked => { Api.deals-filter("refunded"); } }
+            }
+        }
+        // сводка по финансам
+        if root.fin: Rectangle {
+            height: sum.preferred-height;
+            sum := HorizontalLayout {
+                padding: 16px;
+                padding-bottom: 8px;
+                spacing: 10px;
+                Rectangle {
+                    border-radius: 12px;
+                    background: Theme.field;
+                    height: 64px;
+                    VerticalLayout {
+                        alignment: center;
+                        padding-left: 14px;
+                        spacing: 2px;
+                        Text { text: St.me-balance != "" ? St.me-balance : "0 ₽"; color: Theme.ink; font-size: 18px; font-weight: 700; }
+                        Text { text: "на балансе"; color: Theme.muted; font-size: 12.5px; }
+                    }
+                }
+                Rectangle {
+                    border-radius: 12px;
+                    background: Theme.field;
+                    height: 64px;
+                    VerticalLayout {
+                        alignment: center;
+                        padding-left: 14px;
+                        spacing: 2px;
+                        Text { text: St.fin-frozen != "" ? St.fin-frozen : "0 ₽"; color: Theme.ink; font-size: 18px; font-weight: 700; }
+                        Text { text: "в заморозке"; color: Theme.muted; font-size: 12.5px; }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            if St.deals-loading: Text { text: "Загружаю…"; color: Theme.muted; font-size: 14px; }
+            if !St.deals-loading && St.deals-error != "": Text {
+                text: St.deals-error;
+                color: Theme.danger;
+                font-size: 14px;
+                wrap: word-wrap;
+                width: parent.width - 40px;
+                horizontal-alignment: center;
+            }
+            if !St.deals-loading && St.deals-error == "" && (root.fin ? St.txns.length == 0 : St.deals.length == 0): Text {
+                text: root.fin ? "Операций пока нет" : St.deals-state != "" ? "С таким статусом заказов нет" : St.deals-tab == 0 ? "Продаж пока нет" : "Покупок пока нет";
+                color: Theme.muted;
+                font-size: 14px;
+            }
+            if !St.deals-loading && St.deals-error == "": sv := ScrollView {
+                content-width: self.visible-width;
+                changed content-y => {
+                    if (St.deals-more && !St.deals-more-loading && -self.content-y + self.visible-height > self.content-height - 300px) {
+                        Api.deals-more();
+                    }
+                }
+                VerticalLayout {
+                    alignment: start;
+                    if !root.fin: VerticalLayout {
+                        for d in St.deals: TradeItemView { item: d; }
+                    }
+                    if root.fin: VerticalLayout {
+                        for t in St.txns: TxnItemView { item: t; }
+                    }
+                    if St.deals-more: HorizontalLayout {
+                        alignment: center;
+                        padding: 12px;
+                        PrimaryButton {
+                            width: 200px;
+                            flat: true;
+                            text: St.deals-more-loading ? "Загружаю…" : "Показать ещё";
+                            clicked => { Api.deals-more(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,2 +1,4 @@
-# FunPay-Desktop
-FunPay (Windows app)
+# FunPay Tools для Windows
+
+Мессенджер для чатов FunPay
+

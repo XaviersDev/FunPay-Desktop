@@ -1,0 +1,1368 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { MsgRow, Tile, PackRow, StickerCell } from "types.slint";
+import { IconButton, Avatar, Pill, MenuItem, MenuSep, MenuCard, PrimaryButton, TourMark } from "widgets.slint";
+import { EpicNick } from "epic.slint";
+import { TplBar, TplMenuList } from "templates.slint";
+
+export component Album inherits Rectangle {
+    in property <[Tile]> tiles;
+    in property <float> ratio;
+    in property <length> w;
+    in property <length> radius: 12px;
+    in property <bool> removable;
+    callback remove(int);
+    // правый клик по плитке: координаты внутри альбома и адрес картинки
+    callback context(length, length, string);
+    width: w;
+    height: w * ratio;
+    border-radius: radius;
+    clip: true;
+    for t[i] in tiles: Rectangle {
+        x: t.x * w + (t.x > 0.001 ? 1px : 0px);
+        y: t.y * w + (t.y > 0.001 ? 1px : 0px);
+        width: t.w * w - (t.x > 0.001 ? 1px : 0px) - (t.x + t.w < 0.999 ? 1px : 0px);
+        height: t.h * w - (t.y > 0.001 ? 1px : 0px) - (t.y + t.h < root.ratio - 0.001 ? 1px : 0px);
+        background: Theme.dark ? #2A313B : #CBD7E6;
+        if !t.has: Image {
+            source: @image-url("icons/image.svg");
+            width: 28px;
+            colorize: Theme.dark ? #4A5361 : #9FB0C6;
+        }
+        if t.has: Image {
+            width: parent.width;
+            height: parent.height;
+            source: t.img;
+            image-fit: cover;
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                if (!root.removable) {
+                    Api.open-image(t.url);
+                }
+            }
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right && !root.removable) {
+                    root.context(parent.x + self.mouse-x, parent.y + self.mouse-y, t.url);
+                }
+            }
+        }
+        if root.removable: Rectangle {
+            x: parent.width - 30px;
+            y: 6px;
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            background: #000000a0;
+            Image { source: @image-url("icons/close.svg"); width: 16px; colorize: white; }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.remove(i); }
+            }
+        }
+    }
+}
+
+component MsgView inherits Rectangle {
+    in property <MsgRow> item;
+    in property <length> avail;
+    in property <bool> group;
+    property <length> side: group && !item.out ? 40px : 0px;
+    property <length> maxw: max(150px, min(avail - side - 60px, 500px));
+    property <length> album-w: min(maxw, 340px);
+    property <bool> bubble-bg: !item.album || item.text != "" || item.has-reply;
+    property <length> head-w: item.show-author ? am.preferred-width + (item.badge != "" ? bm.preferred-width + 20px : 0px) : 0px;
+    property <length> reply-w: item.has-reply ? min(maxw - 24px, max(rm.preferred-width, ram.preferred-width) + 14px) : 0px;
+    property <length> text-w: min(maxw - 24px, max(tm.preferred-width + 2px, max(head-w, reply-w)));
+    property <length> bubble-w: item.album ? album-w + (item.text != "" || item.has-reply ? 6px : 0px) : text-w + 24px;
+    property <color> bcolor: item.out ? Theme.bubble-out : Theme.bubble-in;
+    property <color> meta: item.out ? Theme.meta-out : Theme.meta-in;
+    property <length> mx;
+    property <length> my;
+    property <string> menu-url;
+    property <int> sel-a;
+    // время с секундами показываем, пока курсор держат на времени
+    property <bool> full-time;
+    property <int> sel-b;
+    property <bool> link-check;
+    property <int> link-off;
+    property <bool> has-sel: root.sel-a != root.sel-b;
+    property <int> jn: St.jump-n;
+    property <bool> lit: St.jump-key == item.key && St.jump-key != "";
+    changed jn => {
+        if (St.jump-key == item.key) {
+            St.jump-y = root.y;
+            St.jump-done += 1;
+        }
+    }
+    height: lay.preferred-height;
+
+    if lit: Rectangle {
+        background: Theme.accent.with-alpha(0.14);
+    }
+
+    tm := Text {
+        width: 0;
+        height: 0;
+        visible: false;
+        text: item.text + item.spacer;
+        font-size: 14.5px;
+    }
+    am := Text {
+        width: 0;
+        height: 0;
+        visible: false;
+        text: item.author;
+        font-size: 13.5px;
+        font-weight: item.nick.on ? 800 : 600;
+    }
+    bm := Text {
+        width: 0;
+        height: 0;
+        visible: false;
+        text: item.badge;
+        font-size: 11px;
+        font-weight: 650;
+    }
+    rm := Text {
+        width: 0;
+        height: 0;
+        visible: false;
+        text: item.reply-text;
+        font-size: 13.5px;
+    }
+    ram := Text {
+        width: 0;
+        height: 0;
+        visible: false;
+        text: item.reply-author;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    lay := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: item.kind == 1 ? 8px : item.group-start ? 6px : 1px;
+        padding-bottom: item.kind == 1 ? 6px : 1px;
+        alignment: item.kind == 1 ? center : item.out ? end : start;
+        spacing: 8px;
+
+        if item.kind == 1: Pill { text: item.text; }
+
+        if item.kind == 0 && root.group && !item.out: VerticalLayout {
+            alignment: end;
+            width: 34px;
+            if item.show-avatar: Rectangle {
+                width: 34px;
+                height: 34px;
+                Avatar {
+                    size: 34px;
+                    img: item.avatar;
+                    has-img: item.has-avatar;
+                    letter: item.letter;
+                    c1: item.c1;
+                    c2: item.c2;
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Api.open-profile(item.author-id); }
+                }
+            }
+        }
+
+        if item.kind == 0: VerticalLayout {
+            spacing: 4px;
+            alignment: start;
+            bubble := Rectangle {
+                width: root.bubble-w;
+                height: inner.preferred-height;
+                background: root.bubble-bg ? root.bcolor : transparent;
+                border-radius: 15px;
+                border-bottom-left-radius: item.tail && !item.out && root.bubble-bg ? 4px : 15px;
+                border-bottom-right-radius: item.tail && item.out && root.bubble-bg ? 4px : 15px;
+                drop-shadow-blur: root.bubble-bg ? 2px : 0px;
+                drop-shadow-offset-y: 1px;
+                drop-shadow-color: root.bubble-bg ? Theme.shadow : transparent;
+
+                if item.tail && root.bubble-bg: Image {
+                    source: item.out ? @image-url("icons/tail_out.svg") : @image-url("icons/tail.svg");
+                    colorize: root.bcolor;
+                    width: 11px;
+                    height: 17px;
+                    x: item.out ? parent.width - 4px : -7px;
+                    y: parent.height - 17px;
+                }
+
+                // правый клик по пузырю (текст правый клик пропускает сюда)
+                TouchArea {
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                            root.mx = self.mouse-x;
+                            root.my = self.mouse-y;
+                            root.menu-url = item.album && item.tiles.length > 0 ? item.tiles[0].url : "";
+                            menu.show();
+                        }
+                    }
+                }
+
+                inner := VerticalLayout {
+                    padding: item.album && (item.text != "" || item.has-reply) ? 3px : 0px;
+                    spacing: 0px;
+                    if item.show-author: HorizontalLayout {
+                        padding-left: item.album ? 9px : 12px;
+                        padding-right: 12px;
+                        padding-top: 7px;
+                        padding-bottom: item.album ? 5px : 0px;
+                        spacing: 7px;
+                        alignment: start;
+                        EpicNick {
+                            text: item.author;
+                            nick: item.nick;
+                            plain: item.author-color;
+                            font-size: 13.5px;
+                            font-weight: 600;
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Api.open-profile(item.author-id); }
+                            }
+                        }
+                        if item.badge != "": Rectangle {
+                            height: 17px;
+                            width: bt.preferred-width + 12px;
+                            border-radius: 6px;
+                            background: Theme.accent-soft;
+                            bt := Text {
+                                text: item.badge;
+                                color: Theme.accent;
+                                font-size: 11px;
+                                font-weight: 650;
+                            }
+                        }
+                    }
+                    if item.has-reply: HorizontalLayout {
+                        padding-left: item.album ? 6px : 10px;
+                        padding-right: 10px;
+                        padding-top: item.show-author ? 4px : 7px;
+                        Rectangle {
+                            height: rq.preferred-height;
+                            border-radius: 6px;
+                            background: item.out ? Theme.accent.with-alpha(0.13) : Theme.accent.with-alpha(0.09);
+                            Rectangle {
+                                x: 0;
+                                width: 3px;
+                                background: Theme.accent;
+                                border-top-left-radius: 6px;
+                                border-bottom-left-radius: 6px;
+                            }
+                            rq := VerticalLayout {
+                                padding-left: 9px;
+                                padding-right: 8px;
+                                padding-top: 4px;
+                                padding-bottom: 5px;
+                                Text {
+                                    text: item.reply-author;
+                                    color: Theme.accent;
+                                    font-size: 13px;
+                                    font-weight: 600;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: item.reply-text;
+                                    color: item.out ? Theme.text-out : Theme.text-in;
+                                    font-size: 13.5px;
+                                    overflow: elide;
+                                    wrap: no-wrap;
+                                }
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Api.jump-to(item.reply-key); }
+                            }
+                        }
+                    }
+                    if item.album: alb := Album {
+                        tiles: item.tiles;
+                        ratio: item.ratio;
+                        w: root.album-w;
+                        radius: item.text != "" || item.show-author || item.has-reply ? 11px : 14px;
+                        context(x, y, url) => {
+                            root.menu-url = url;
+                            root.mx = self.absolute-position.x - bubble.absolute-position.x + x;
+                            root.my = self.absolute-position.y - bubble.absolute-position.y + y;
+                            menu.show();
+                        }
+                    }
+                    if item.text != "": HorizontalLayout {
+                        padding-left: item.album ? 9px : 12px;
+                        padding-right: 12px;
+                        padding-top: item.show-author || item.has-reply ? 3px : 7px;
+                        padding-bottom: 8px;
+                        Rectangle {
+                        width: item.album ? root.album-w - 18px : root.text-w;
+                        height: ti.preferred-height;
+                        // текст со ссылками рисует StyledText, а прозрачное поле сверху даёт выделять и копировать
+                        if item.has-links: StyledText {
+                            width: parent.width;
+                            text: item.rich;
+                            default-color: item.out ? Theme.text-out : Theme.text-in;
+                            default-font-size: 14.5px;
+                            link-color: item.out ? Theme.check : Theme.accent;
+                        }
+                        // клик по ссылке: курсор встал внутрь ссылки и выделения нет
+                        Timer {
+                            interval: 230ms;
+                            running: root.link-check;
+                            triggered => {
+                                root.link-check = false;
+                                if (ti.anchor-position-byte-offset == ti.cursor-position-byte-offset && ti.cursor-position-byte-offset == root.link-off) {
+                                    if (Api.msg-link(item.key, root.link-off)) {
+                                        ti.set-selection-offsets(0, 0);
+                                    }
+                                }
+                            }
+                        }
+                        ti := TextInput {
+                            width: parent.width;
+                            text: item.text + item.spacer;
+                            read-only: true;
+                            // выделение запоминаем, чтобы меню по правой кнопке знало, что копировать
+                            changed cursor-position-byte-offset => {
+                                root.sel-b = self.cursor-position-byte-offset;
+                                if (item.has-links && self.anchor-position-byte-offset == self.cursor-position-byte-offset) {
+                                    root.link-off = self.cursor-position-byte-offset;
+                                    root.link-check = false;
+                                    root.link-check = true;
+                                }
+                            }
+                            changed anchor-position-byte-offset => { root.sel-a = self.anchor-position-byte-offset; }
+                            key-pressed(e) => {
+                                if (e.modifiers.control && (e.text == "c" || e.text == "C" || e.text == "с" || e.text == "С" || e.text == Key.Insert)) {
+                                    Api.copy-range(self.text, self.anchor-position-byte-offset, self.cursor-position-byte-offset);
+                                    return accept;
+                                }
+                                if (e.modifiers.control && (e.text == "a" || e.text == "A" || e.text == "ф" || e.text == "Ф")) {
+                                    self.select-all();
+                                    return accept;
+                                }
+                                return reject;
+                            }
+                            wrap: word-wrap;
+                            single-line: false;
+                            // почти прозрачный, а не transparent: иначе рендер пропускает поле и выделение не видно
+                            color: item.has-links ? (item.out ? Theme.text-out : Theme.text-in).with-alpha(0.01) : item.out ? Theme.text-out : Theme.text-in;
+                            font-size: 14.5px;
+                            selection-background-color: Theme.accent.with-alpha(0.35);
+                            selection-foreground-color: item.out ? Theme.text-out : Theme.text-in;
+                        }
+                        }
+                    }
+                }
+
+                // время и галочки
+                if item.album && item.text == "": Rectangle {
+                    x: parent.width - self.width - 7px;
+                    y: parent.height - self.height - 7px;
+                    height: 20px;
+                    width: mt.preferred-width + 14px;
+                    border-radius: 10px;
+                    background: #00000060;
+                    pta := TouchArea { }
+                    Timer {
+                        interval: 1670ms;
+                        running: pta.has-hover && !root.full-time;
+                        triggered => { root.full-time = true; }
+                    }
+                    property <bool> hov: pta.has-hover;
+                    changed hov => { if (!self.hov) { root.full-time = false; } }
+                    mt := HorizontalLayout {
+                        width: self.preferred-width;
+                        x: 7px;
+                        spacing: 3px;
+                        Text { text: root.full-time && item.time-full != "" ? item.time-full : item.time; color: white; font-size: 11.5px; vertical-alignment: center; }
+                        if item.out && item.state == 0: Image { source: @image-url("icons/done_all.svg"); width: 15px; colorize: white; }
+                        if item.state == 1: Image { source: @image-url("icons/schedule.svg"); width: 14px; colorize: white; }
+                    }
+                }
+                if !(item.album && item.text == ""): Rectangle {
+                    width: meta-row.preferred-width + 8px;
+                    x: parent.width - self.width - 6px;
+                    y: parent.height - 22px;
+                    height: 18px;
+                    border-radius: 9px;
+                    // если время с секундами наехало на текст, подкладываем цвет пузыря
+                    background: root.full-time ? root.bcolor : transparent;
+                    meta-row := HorizontalLayout {
+                        x: 4px;
+                        width: self.preferred-width;
+                        height: parent.height;
+                        spacing: 3px;
+                        if item.pinned: Image { source: @image-url("icons/push_pin.svg"); width: 13px; colorize: root.meta; }
+                        Text { text: root.full-time && item.time-full != "" ? item.time-full : item.time; color: root.meta; font-size: 11.5px; vertical-alignment: center; }
+                        if item.out && item.state == 0: Image { source: @image-url("icons/done_all.svg"); width: 16px; colorize: Theme.check; }
+                        if item.state == 1: Image { source: @image-url("icons/schedule.svg"); width: 14px; colorize: root.meta; }
+                        if item.state == 2: Image { source: @image-url("icons/error.svg"); width: 15px; colorize: Theme.danger; }
+                    }
+                    tta := TouchArea {
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                                root.mx = parent.x + self.mouse-x;
+                                root.my = parent.y + self.mouse-y;
+                                menu.show();
+                            }
+                        }
+                    }
+                    Timer {
+                        interval: 1670ms;
+                        running: tta.has-hover && !root.full-time;
+                        triggered => { root.full-time = true; }
+                    }
+                    property <bool> hov: tta.has-hover;
+                    changed hov => { if (!self.hov) { root.full-time = false; } }
+                }
+
+                // меню открывается прямо у курсора; не помещается справа или снизу, открываем влево или вверх
+                menu := PopupWindow {
+                    property <bool> left: bubble.absolute-position.x + root.mx + mcard.preferred-width + 8px > St.win-w;
+                    property <bool> up: bubble.absolute-position.y + root.my + mcard.preferred-height + 8px > St.win-h;
+                    x: self.left ? root.mx - mcard.preferred-width : root.mx;
+                    y: self.up ? max(root.my - mcard.preferred-height, 30px - bubble.absolute-position.y) : root.my;
+                    mcard := MenuCard {
+                        from-right: menu.left;
+                        from-bottom: menu.up;
+                        VerticalLayout {
+                            padding-top: 6px;
+                            padding-bottom: 6px;
+                            if item.state == 0: MenuItem {
+                                icon: @image-url("icons/reply.svg");
+                                text: "Ответить";
+                                activated => { Api.msg-action(item.key, "reply", ""); }
+                            }
+                            if item.text != "": MenuItem {
+                                icon: @image-url("icons/content_copy.svg");
+                                text: root.has-sel ? "Копировать выделенный текст" : "Копировать текст";
+                                activated => { Api.copy-range(item.text + item.spacer, root.sel-a, root.sel-b); }
+                            }
+                            if item.state == 0: MenuItem {
+                                icon: item.pinned ? @image-url("icons/push_pin_off.svg") : @image-url("icons/push_pin.svg");
+                                text: item.pinned ? "Открепить" : "Закрепить";
+                                activated => { Api.msg-action(item.key, item.pinned ? "unpin" : "pin", ""); }
+                            }
+                            if item.album: MenuItem {
+                                icon: @image-url("icons/image.svg");
+                                text: "Открыть картинку";
+                                activated => { Api.open-image(root.menu-url); }
+                            }
+                            if item.album: MenuItem {
+                                icon: @image-url("icons/download.svg");
+                                text: "Сохранить картинку…";
+                                activated => { Api.save-image(root.menu-url); }
+                            }
+                            if item.album: MenuItem {
+                                icon: @image-url("icons/content_copy.svg");
+                                text: "Копировать картинку";
+                                activated => { Api.copy-image(root.menu-url); }
+                            }
+                            for o in item.orders: MenuItem {
+                                icon: @image-url("icons/receipt_long.svg");
+                                text: "Заказ #" + o;
+                                activated => { Api.open-order(o); }
+                            }
+                            if item.link != "": MenuItem {
+                                icon: @image-url("icons/link.svg");
+                                text: "Открыть ссылку";
+                                activated => { Api.open-url(item.link); }
+                            }
+                            if item.author-id != "" && item.author-id != "0" && !item.out: MenuSep { }
+                            if item.author-id != "" && item.author-id != "0" && !item.out: MenuItem {
+                                icon: @image-url("icons/account_circle.svg");
+                                text: "Профиль " + item.author;
+                                activated => { Api.open-profile(item.author-id); }
+                            }
+                            if item.state == 2: MenuItem {
+                                icon: @image-url("icons/refresh.svg");
+                                text: "Отправить ещё раз";
+                                activated => { Api.retry(item.key); }
+                            }
+                        }
+                    }
+                }
+            }
+            // кнопки заказов под оповещением FunPay
+            if item.orders.length > 0: HorizontalLayout {
+                spacing: 4px;
+                width: root.bubble-w;
+                for o in item.orders: Rectangle {
+                    height: 34px;
+                    border-radius: 10px;
+                    background: ota.has-hover ? Theme.kb.brighter(0.2) : Theme.kb;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 7px;
+                        Image { source: @image-url("icons/receipt_long.svg"); width: 18px; colorize: white; }
+                        Text { text: "Открыть заказ #" + o; color: white; font-size: 13.5px; font-weight: 600; vertical-alignment: center; }
+                    }
+                    ota := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Api.open-order(o); }
+                    }
+                }
+            }
+        }
+
+        if item.kind == 0 && item.state == 2: VerticalLayout {
+            alignment: center;
+            IconButton {
+                size: 30px;
+                icon-size: 18px;
+                icon: @image-url("icons/refresh.svg");
+                tint: Theme.danger;
+                clicked => { Api.retry(item.key); }
+            }
+        }
+    }
+}
+
+component StickerPanel inherits Rectangle {
+    property <length> cell: 78px;
+    property <int> cols: max(1, floor((root.width - 12px) / cell));
+    height: 290px;
+    background: Theme.panel;
+    Rectangle {
+        height: 1px;
+        y: 0;
+        background: Theme.line;
+    }
+    VerticalLayout {
+        Flickable {
+            height: 46px;
+            content-width: tabs.preferred-width;
+            tabs := HorizontalLayout {
+                padding: 6px;
+                spacing: 4px;
+                for p[i] in St.sticker-packs: Rectangle {
+                    width: 36px;
+                    height: 34px;
+                    border-radius: 8px;
+                    background: St.sticker-pack == i ? Theme.hover : transparent;
+                    if p.recent: Image { source: @image-url("icons/history.svg"); width: 22px; colorize: St.sticker-pack == i ? Theme.accent : Theme.muted; }
+                    if !p.recent && p.has-icon: Image { source: p.icon; width: 28px; height: 28px; image-fit: contain; }
+                    if !p.recent && !p.has-icon: Text { text: p.title; font-size: 11px; color: Theme.muted; overflow: elide; width: 32px; horizontal-alignment: center; }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Api.sticker-pack(i); }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            Flickable {
+                content-height: ceil(St.sticker-cells.length / root.cols) * root.cell + 8px;
+                for c[i] in St.sticker-cells: Rectangle {
+                    x: 6px + mod(i, root.cols) * root.cell;
+                    y: floor(i / root.cols) * root.cell;
+                    width: root.cell;
+                    height: root.cell;
+                    border-radius: 10px;
+                    background: sta.has-hover ? Theme.hover : transparent;
+                    if c.has: Image {
+                        source: c.img;
+                        width: parent.width - 10px;
+                        height: parent.height - 10px;
+                        image-fit: contain;
+                    }
+                    sta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Api.sticker-send(c.key); }
+                    }
+                }
+            }
+            if St.sticker-cells.length == 0: Text {
+                text: St.stickers-loading ? "Загружаю стикеры…" : St.sticker-pack == 0 ? "Здесь появятся стикеры, которые вы отправляли" : "Стикеров нет";
+                color: Theme.muted;
+                font-size: 13px;
+            }
+        }
+    }
+}
+
+export component ChatPane inherits Rectangle {
+    in property <bool> show-back;
+    in property <bool> compact;
+    property <bool> group: St.cur-kind != 0;
+    in-out property <bool> stick: true;
+    property <length> anchor;
+    property <bool> keep-anchor;
+    property <bool> pinning;
+    property <int> jd: St.jump-done;
+    changed jd => {
+        root.pinning = false;
+        root.stick = false;
+        sv.content-y = max(min(0px, sv.visible-height - sv.content-height), min(0px, -St.jump-y + sv.visible-height / 3));
+    }
+    pin-timer := Timer {
+        interval: 900ms;
+        running: root.pinning;
+        triggered => { root.pinning = false; }
+    }
+    public function scroll-bottom() {
+        root.stick = true;
+        root.pinning = false;
+        root.pinning = true;
+        sv.content-y = min(0px, sv.visible-height - sv.content-height);
+    }
+    public function begin-prepend() {
+        root.anchor = sv.content-height + sv.content-y;
+        root.keep-anchor = true;
+    }
+    public function focus-input() {
+        input.focus();
+    }
+    function do-send() {
+        if (input.text != "") {
+            Api.send-text(input.text);
+            input.text = "";
+            St.ai-orig = "";
+            root.scroll-bottom();
+        }
+    }
+    // шаблоны: в узком окне всегда меню у стикеров
+    property <bool> tpl-menu: St.tpl-pos == 4 || root.width < 560px;
+    property <bool> tpl-bar: !root.tpl-menu && St.templates.length > 0;
+    property <bool> tpl-menu-open;
+    function use-tpl(id: string, from-cmd: bool) {
+        let s = Api.tpl-use(id);
+        if (from-cmd) {
+            input.text = "";
+            Api.cmd-query("");
+        }
+        if (s != "") {
+            root.insert-at-cursor(s);
+        } else {
+            root.scroll-bottom();
+        }
+        input.focus();
+    }
+    // обучение печатает в поле само
+    property <int> tdn: St.tour-draft-n;
+    changed tdn => {
+        input.text = St.tour-draft;
+        input.set-selection-offsets(100000, 100000);
+    }
+    // ответ ИИ встаёт в поле
+    property <int> ain: St.ai-n;
+    changed ain => {
+        input.text = St.ai-result;
+        input.focus();
+        input.set-selection-offsets(100000, 100000);
+    }
+    // Вставка из буфера: картинка уходит в окно отправки, текст дописывается в поле.
+    function paste-into-input() {
+        input.focus();
+        root.insert-at-cursor(Api.paste-clipboard());
+    }
+    // Вставляет строку на место курсора (или вместо выделения).
+    function insert-at-cursor(s: string) {
+        if (s == "") { return; }
+        input.text = input.text + s;
+        input.set-selection-offsets(100000, 100000);
+    }
+
+    background: Theme.panel;
+
+    VerticalLayout {
+        // шапка: имя и статус кликабельны, открывают карточку
+        Rectangle {
+            height: compact ? 44px : 52px;
+            background: Theme.panel;
+            HorizontalLayout {
+                padding-left: show-back ? 4px : 18px;
+                padding-right: 6px;
+                spacing: 8px;
+                if show-back: VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: @image-url("icons/arrow_back.svg");
+                        clicked => { Api.close-chat(); }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 1px;
+                        EpicNick {
+                            text: St.cur-title;
+                            nick: St.cur-nick;
+                            font-size: 15px;
+                            font-weight: 600;
+                        }
+                        if St.cur-subtitle != "": Text {
+                            text: St.cur-subtitle;
+                            color: St.cur-online ? Theme.accent : Theme.muted;
+                            font-size: 13px;
+                            overflow: elide;
+                        }
+                    }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Api.open-card(); }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: @image-url("icons/more_vert.svg");
+                        clicked => { hmenu.show(); }
+                    }
+                }
+            }
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.line;
+            }
+            hmenu := PopupWindow {
+                x: parent.width - hcard.preferred-width - 8px;
+                y: 44px;
+                hcard := MenuCard {
+                    from-right: true;
+                    VerticalLayout {
+                        padding-top: 6px;
+                        padding-bottom: 6px;
+                        if St.cur-fpt: Rectangle {
+                            height: 40px;
+                            background: fta.has-hover && !St.show-fpt-banner ? Theme.hover : transparent;
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 16px;
+                                spacing: 12px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Image { source: @image-url("icons/check_circle.svg"); width: 20px; height: 20px; colorize: Theme.accent; }
+                                }
+                                Text { text: "Пользуется FunPay Tools"; color: Theme.accent; font-size: 14px; font-weight: 600; vertical-alignment: center; }
+                            }
+                            fta := TouchArea {
+                                mouse-cursor: St.show-fpt-banner ? default : pointer;
+                                clicked => { if (!St.show-fpt-banner) { Api.undismiss-fpt(); } }
+                            }
+                        }
+                        if St.cur-fpt: MenuSep { }
+                        if St.cur-kind == 0: MenuItem {
+                            icon: @image-url("icons/account_circle.svg");
+                            text: "Профиль";
+                            activated => { Api.open-profile(St.cur-peer-id); }
+                        }
+                        if St.cur-kind == 0: MenuItem {
+                            icon: St.cur-muted ? @image-url("icons/notifications_active.svg") : @image-url("icons/notifications_off.svg");
+                            text: St.cur-muted ? "Включить уведомления" : "Выключить уведомления";
+                            activated => { Api.chat-menu(St.cur-id, St.cur-kind, St.cur-muted ? "unmute" : "mute", ""); }
+                        }
+                        MenuItem {
+                            icon: St.cur-pinned ? @image-url("icons/push_pin_off.svg") : @image-url("icons/push_pin.svg");
+                            text: St.cur-pinned ? "Открепить чат" : "Закрепить чат";
+                            activated => { Api.chat-menu(St.cur-id, St.cur-kind, St.cur-pinned ? "unpin" : "pin", ""); }
+                        }
+                        if St.cur-kind != 3: MenuItem {
+                            icon: @image-url("icons/open_in_new.svg");
+                            text: "Открыть на FunPay";
+                            activated => { Api.chat-menu(St.cur-id, St.cur-kind, "web", ""); }
+                        }
+                    }
+                }
+            }
+        }
+        // закреплённое сообщение
+        if St.pin-key != "" && !compact: Rectangle {
+            height: 46px;
+            background: pta.has-hover ? Theme.hover : Theme.panel;
+            pta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Api.jump-to(St.pin-key); }
+            }
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 6px;
+                spacing: 11px;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle { width: 3px; height: 30px; border-radius: 2px; background: Theme.accent; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text { text: "Закреплённое сообщение"; color: Theme.accent; font-size: 13px; font-weight: 600; }
+                    Text { text: St.pin-text; color: Theme.ink; font-size: 13.5px; overflow: elide; wrap: no-wrap; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        size: 32px;
+                        icon-size: 19px;
+                        icon: @image-url("icons/close.svg");
+                        clicked => { Api.msg-action(St.pin-key, "unpin", ""); }
+                    }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+        }
+        // «Смотрит лот»
+        if St.lot-name != "" && !compact: Rectangle {
+            height: 46px;
+            background: lta.has-hover ? Theme.hover : Theme.panel;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 14px;
+                spacing: 11px;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle { width: 3px; height: 30px; border-radius: 2px; background: Theme.accent; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text { text: "Смотрит лот"; color: Theme.accent; font-size: 13px; font-weight: 600; }
+                    Text { text: St.lot-name; color: Theme.ink; font-size: 13.5px; overflow: elide; wrap: no-wrap; }
+                }
+            }
+            lta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Api.open-url(St.lot-url); }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+        }
+        if St.show-fpt-banner && !compact: Rectangle {
+            height: 36px;
+            background: Theme.panel;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 6px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    Image { source: @image-url("icons/check_circle.svg"); width: 18px; height: 18px; colorize: Theme.accent; }
+                }
+                Text {
+                    text: "Собеседник тоже пользуется FunPay Tools";
+                    color: Theme.accent;
+                    font-size: 13px;
+                    font-weight: 600;
+                    overflow: elide;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        size: 26px;
+                        icon-size: 16px;
+                        icon: @image-url("icons/close.svg");
+                        clicked => { Api.dismiss-fpt(); }
+                    }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+        }
+        if root.tpl-bar && St.tpl-pos == 2: Rectangle {
+            height: b2.preferred-height + 1px;
+            background: Theme.panel;
+            b2 := TplBar { y: 0; panel: true; use(id) => { root.use-tpl(id, false); } }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+        }
+        // лента
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.wall;
+            clip: true;
+            if Theme.show-pattern: Image {
+                width: parent.width;
+                height: parent.height;
+                source: Theme.wall-pattern;
+                horizontal-tiling: repeat;
+                vertical-tiling: repeat;
+            }
+            if Theme.custom && Theme.c-has-wall-img && !Theme.c-wall-tiled: Image {
+                width: parent.width;
+                height: parent.height;
+                source: Theme.c-wall-img;
+                image-fit: cover;
+            }
+            if Theme.custom && Theme.c-has-wall-img && Theme.c-wall-tiled: Image {
+                width: parent.width;
+                height: parent.height;
+                source: Theme.c-wall-img;
+                horizontal-tiling: repeat;
+                vertical-tiling: repeat;
+            }
+            FocusScope {
+                // буквы, набранные при фокусе в ленте, уходят в поле ввода
+                key-pressed(e) => {
+                    if (e.text != "" && !e.modifiers.control && !e.modifiers.alt && e.text != Key.Escape && e.text != Key.Tab
+                        && e.text != Key.UpArrow && e.text != Key.DownArrow && e.text != Key.LeftArrow && e.text != Key.RightArrow
+                        && e.text != Key.Return && e.text != Key.Backspace && e.text != Key.Delete && e.text != Key.PageUp && e.text != Key.PageDown
+                        && e.text != Key.Home && e.text != Key.End && e.text != Key.Shift && e.text != Key.Control) {
+                        input.focus();
+                        input.text = input.text + e.text;
+                        input.set-selection-offsets(100000, 100000);
+                        return accept;
+                    }
+                    return reject;
+                }
+                sv := ScrollView {
+                    width: parent.width;
+                    height: parent.height;
+                    content-width: self.visible-width;
+                    content-height: max(self.visible-height, col.preferred-height);
+                    changed content-height => {
+                        if (root.keep-anchor) {
+                            self.content-y = min(0px, root.anchor - self.content-height);
+                            root.keep-anchor = false;
+                        } else if (root.stick || root.pinning) {
+                            self.content-y = min(0px, self.visible-height - self.content-height);
+                        }
+                    }
+                    changed visible-height => {
+                        if (root.stick || root.pinning) {
+                            self.content-y = min(0px, self.visible-height - self.content-height);
+                        }
+                    }
+                    changed content-y => {
+                        if (root.pinning) {
+                            return;
+                        }
+                        root.stick = self.content-y <= self.visible-height - self.content-height + 80px;
+                        if (self.content-y > -400px && St.has-older && !St.loading-older && !St.msgs-loading && St.messages.length > 0) {
+                            Api.load-older();
+                        }
+                    }
+                    col := VerticalLayout {
+                        width: sv.visible-width;
+                        height: sv.content-height;
+                        alignment: end;
+                        padding-top: 6px;
+                        padding-bottom: 8px;
+                        if St.loading-older: HorizontalLayout {
+                            alignment: center;
+                            padding: 6px;
+                            Pill { text: "Загружаю историю…"; }
+                        }
+                        for r in St.messages: MsgView {
+                            item: r;
+                            avail: sv.visible-width;
+                            group: root.group;
+                        }
+                    }
+                }
+            }
+            if St.msgs-loading && St.messages.length == 0: Pill { text: "Загружаю переписку…"; }
+            if !St.msgs-loading && St.messages.length == 0 && St.gchat-disabled == "": Pill { text: "Сообщений пока нет"; }
+            if St.gchat-disabled != "": Pill { text: St.gchat-disabled; }
+            if !root.stick && St.messages.length > 0: Rectangle {
+                x: parent.width - 58px;
+                y: parent.height - 58px;
+                width: 42px;
+                height: 42px;
+                border-radius: 21px;
+                background: Theme.panel;
+                drop-shadow-blur: 6px;
+                drop-shadow-color: Theme.shadow;
+                Image { source: @image-url("icons/keyboard_arrow_down.svg"); width: 26px; colorize: Theme.muted; }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.scroll-bottom(); }
+                }
+            }
+        }
+        if St.send-error != "": Rectangle {
+            height: 34px;
+            background: Theme.danger.with-alpha(0.12);
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 6px;
+                spacing: 8px;
+                Image { source: @image-url("icons/error.svg"); width: 18px; colorize: Theme.danger; }
+                Text {
+                    text: St.send-error;
+                    color: Theme.danger;
+                    font-size: 13px;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                IconButton {
+                    size: 28px;
+                    icon-size: 17px;
+                    tint: Theme.danger;
+                    icon: @image-url("icons/close.svg");
+                    clicked => { St.send-error = ""; }
+                }
+            }
+        }
+        // ответ на сообщение
+        if St.reply-key != "": Rectangle {
+            height: 46px;
+            background: Theme.panel;
+            Rectangle { y: 0; height: 1px; background: Theme.line; }
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 6px;
+                spacing: 12px;
+                Image { source: @image-url("icons/reply.svg"); width: 22px; colorize: Theme.accent; }
+                Rectangle { width: 2px; height: 30px; y: 8px; background: Theme.accent; }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text { text: "Ответ " + St.reply-author; color: Theme.accent; font-size: 13px; font-weight: 600; overflow: elide; }
+                    Text { text: St.reply-text; color: Theme.ink; font-size: 13.5px; overflow: elide; wrap: no-wrap; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        size: 32px;
+                        icon-size: 19px;
+                        icon: @image-url("icons/close.svg");
+                        clicked => { Api.cancel-reply(); }
+                    }
+                }
+            }
+        }
+        if St.stickers-open && St.cur-kind != 3: StickerPanel { }
+        if St.cur-kind == 3 && St.gchat-need-login: Rectangle {
+            height: gl.preferred-height;
+            background: Theme.panel;
+            gl := VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+                PrimaryButton {
+                    text: "Войти в чат через бота @FPToolsBot";
+                    clicked => { Api.gchat-login(); }
+                }
+                if St.gchat-status != "": Text {
+                    text: St.gchat-status;
+                    color: Theme.muted;
+                    font-size: 12.5px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+        // подсказки команд: «/» в начале сообщения
+        if St.cmd-hits.length > 0: Rectangle {
+            height: min(cl.preferred-height, 210px);
+            background: Theme.panel;
+            Rectangle { y: 0; height: 1px; background: Theme.line; }
+            cl := VerticalLayout {
+                padding-top: 4px;
+                padding-bottom: 4px;
+                for h[i] in St.cmd-hits: Rectangle {
+                    height: 40px;
+                    background: ha.has-hover || i == 0 ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 10px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle { width: 8px; height: 8px; border-radius: 4px; background: h.has-color ? h.color : Theme.accent; }
+                        }
+                        Text { text: "/" + h.name; color: Theme.accent; font-size: 13.5px; font-weight: 600; vertical-alignment: center; }
+                        Text { text: h.preview; color: Theme.muted; font-size: 13px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                        if i == 0: Text { text: "Tab"; color: Theme.faint; font-size: 11.5px; vertical-alignment: center; }
+                    }
+                    ha := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.use-tpl(h.id, true); }
+                    }
+                }
+            }
+        }
+        // ИИ переписывает / переписал
+        if St.ai-busy || St.ai-orig != "": Rectangle {
+            height: 34px;
+            background: Theme.panel;
+            Rectangle { y: 0; height: 1px; background: Theme.line; }
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 6px;
+                spacing: 8px;
+                Image {
+                    source: @image-url("icons/auto_awesome.svg");
+                    width: 17px;
+                    colorize: Theme.accent;
+                    opacity: St.ai-busy ? 0.4 + 0.6 * (0.5 + 0.5 * sin(animation-tick() / 3ms * 1deg)) : 1;
+                }
+                Text {
+                    text: St.ai-busy ? "ИИ переписывает сообщение…" : "Переписано ИИ";
+                    color: Theme.accent;
+                    font-size: 13px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                if !St.ai-busy: Text {
+                    text: "Вернуть как было";
+                    color: Theme.muted;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            input.text = St.ai-orig;
+                            St.ai-orig = "";
+                            input.focus();
+                            input.set-selection-offsets(100000, 100000);
+                        }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if !St.ai-busy: IconButton {
+                    size: 28px;
+                    icon-size: 16px;
+                    icon: @image-url("icons/close.svg");
+                    clicked => { St.ai-orig = ""; }
+                }
+            }
+        }
+        composer := Rectangle {
+            property <bool> hidden: St.cur-kind == 3 && St.gchat-need-login;
+            visible: !hidden;
+            height: hidden ? 0px : cv.preferred-height;
+            background: Theme.panel;
+            Rectangle {
+                height: 1px;
+                y: 0;
+                background: Theme.line;
+            }
+            cv := VerticalLayout {
+                if root.tpl-bar && St.tpl-pos == 0: TplBar {
+                    use(id) => { root.use-tpl(id, false); }
+                }
+                Rectangle {
+                    height: max(50px, fl.height + 20px);
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 2px;
+                VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 6px;
+                    IconButton {
+                        icon: @image-url("icons/attach_file.svg");
+                        icon-size: 23px;
+                        clicked => { Api.attach(); }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    TouchArea {
+                        mouse-cursor: text;
+                        clicked => { input.focus(); }
+                    }
+                    fs := FocusScope {
+                        capture-key-pressed(e) => {
+                            if (e.modifiers.control && (e.text == "v" || e.text == "V" || e.text == "м" || e.text == "М")) {
+                                input.focus();
+                                root.paste-into-input();
+                                return accept;
+                            }
+                            if (e.modifiers.control && (e.text == "c" || e.text == "C" || e.text == "с" || e.text == "С")) {
+                                if (input.anchor-position-byte-offset != input.cursor-position-byte-offset) {
+                                    Api.copy-range(input.text, input.anchor-position-byte-offset, input.cursor-position-byte-offset);
+                                }
+                                return accept;
+                            }
+                            if (e.modifiers.control && (e.text == "x" || e.text == "X" || e.text == "ч" || e.text == "Ч")) {
+                                if (input.anchor-position-byte-offset != input.cursor-position-byte-offset) {
+                                    let lo = min(input.anchor-position-byte-offset, input.cursor-position-byte-offset);
+                                    input.text = Api.cut-range(input.text, input.anchor-position-byte-offset, input.cursor-position-byte-offset);
+                                    input.set-selection-offsets(lo, lo);
+                                }
+                                return accept;
+                            }
+                            if (e.modifiers.control && (e.text == "a" || e.text == "A" || e.text == "ф" || e.text == "Ф")) {
+                                input.select-all();
+                                return accept;
+                            }
+                            // бинды шаблонов: Alt+1…9
+                            if (e.modifiers.alt && !e.modifiers.control && (e.text == "1" || e.text == "2" || e.text == "3" || e.text == "4" || e.text == "5" || e.text == "6" || e.text == "7" || e.text == "8" || e.text == "9")) {
+                                let s = Api.tpl-bind(e.text.to-float());
+                                if (s != "") {
+                                    root.insert-at-cursor(s);
+                                }
+                                return accept;
+                            }
+                            // команда «/шаблон»: Tab или Enter подставляют первый вариант
+                            if (St.cmd-hits.length > 0 && (e.text == Key.Tab || (e.text == Key.Return && !e.modifiers.shift))) {
+                                root.use-tpl(St.cmd-hits[0].id, true);
+                                return accept;
+                            }
+                            if (e.text == Key.Escape && St.cmd-hits.length > 0) {
+                                Api.cmd-query("");
+                                return accept;
+                            }
+                            if (e.text == Key.Return && !e.modifiers.shift && !e.modifiers.control) {
+                                root.do-send();
+                                return accept;
+                            }
+                            if (e.text == Key.Escape && St.reply-key != "") {
+                                Api.cancel-reply();
+                                return accept;
+                            }
+                            return reject;
+                        }
+                        fl := Flickable {
+                            y: (parent.height - self.height) / 2;
+                            width: parent.width;
+                            height: min(max(22px, input.preferred-height), 150px);
+                            content-height: max(self.height, input.preferred-height);
+                            input := TextInput {
+                                width: fl.width - 4px;
+                                height: max(fl.height, self.preferred-height);
+                                wrap: word-wrap;
+                                single-line: false;
+                                font-size: 15px;
+                                color: Theme.ink;
+                                vertical-alignment: center;
+                                enabled: !St.ai-busy;
+                                selection-background-color: Theme.accent-soft;
+                                selection-foreground-color: Theme.ink;
+                                changed text => {
+                                    if (St.templates.length > 0 && (St.cmd-hits.length > 0 || Api.starts-slash(self.text))) {
+                                        Api.cmd-query(self.text);
+                                    }
+                                }
+                                cursor-position-changed(p) => {
+                                    if (p.y + fl.content-y > fl.height - 22px) {
+                                        fl.content-y = fl.height - 22px - p.y;
+                                    }
+                                    if (p.y + fl.content-y < 0) {
+                                        fl.content-y = -p.y;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if input.text == "": Text {
+                        x: 0;
+                        text: St.ai-busy ? "" : "Сообщение";
+                        color: Theme.faint;
+                        font-size: 15px;
+                    }
+                }
+                // шаблоны в меню: по настройке или когда окно узкое
+                if root.tpl-menu: VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 6px;
+                    IconButton {
+                        icon: @image-url("icons/short_text.svg");
+                        icon-size: 23px;
+                        active: root.tpl-menu-open;
+                        clicked => { root.tpl-menu-open = true; tplpop.show(); }
+                        TourMark { tid: "tpl-bar"; }
+                    }
+                }
+                if St.cur-kind != 3: VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 6px;
+                    IconButton {
+                        icon: @image-url("icons/sticker.svg");
+                        icon-size: 23px;
+                        active: St.stickers-open;
+                        clicked => { Api.stickers-toggle(); }
+                    }
+                }
+                // отправка: ПКМ переписывает черновик с ИИ
+                VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 6px;
+                    sendb := Rectangle {
+                        width: 38px;
+                        height: 38px;
+                        border-radius: 19px;
+                        background: sta.has-hover ? Theme.hover : transparent;
+                        Image {
+                            source: @image-url("icons/send-fill.svg");
+                            width: 24px;
+                            colorize: input.text != "" ? Theme.accent : Theme.faint;
+                        }
+                        sta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { St.tip = ""; root.do-send(); }
+                            pointer-event(e) => {
+                                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                                    St.tip = "";
+                                    if (input.text != "" && !St.ai-busy) {
+                                        St.ai-orig = "";
+                                        Api.ai-rewrite(input.text);
+                                    }
+                                }
+                            }
+                        }
+                        Timer {
+                            interval: 1670ms;
+                            running: sta.has-hover && St.tip == "";
+                            triggered => {
+                                St.tip-x = sendb.absolute-position.x + sendb.width;
+                                St.tip-y = sendb.absolute-position.y;
+                                St.tip = "ПКМ - переписать с ИИ";
+                            }
+                        }
+                        property <bool> hov: sta.has-hover;
+                        changed hov => { if (!self.hov) { St.tip = ""; } }
+                        TourMark { tid: "send"; }
+                    }
+                }
+            }
+            tplpop := PopupWindow {
+                x: max(4px, root.width - 386px + (St.cur-kind != 3 ? 0px : 40px));
+                y: -tml.height - 6px;
+                width: tml.width;
+                height: tml.height;
+                close-policy: close-on-click-outside;
+                MenuCard {
+                    from-bottom: true;
+                    from-right: true;
+                    width: tml.width;
+                    height: tml.height;
+                    tml := TplMenuList {
+                        use(id) => { tplpop.close(); root.tpl-menu-open = false; root.use-tpl(id, false); }
+                        settings => { tplpop.close(); root.tpl-menu-open = false; St.tpl-open = true; St.tpl-tab = 0; }
+                    }
+                }
+            }
+                }
+                if root.tpl-bar && St.tpl-pos == 1: TplBar {
+                    use(id) => { root.use-tpl(id, false); }
+                }
+            }
+        }
+        if root.tpl-bar && St.tpl-pos == 3: Rectangle {
+            height: b3.preferred-height + 1px;
+            background: Theme.panel;
+            Rectangle { y: 0; height: 1px; background: Theme.line; }
+            b3 := TplBar { y: 1px; panel: true; use(id) => { root.use-tpl(id, false); } }
+        }
+    }
+}
+
+export component EmptyChat inherits Rectangle {
+    background: Theme.wall;
+    clip: true;
+    if Theme.show-pattern: Image {
+        width: parent.width;
+        height: parent.height;
+        source: Theme.wall-pattern;
+        horizontal-tiling: repeat;
+        vertical-tiling: repeat;
+    }
+    if Theme.custom && Theme.c-has-wall-img: Image {
+        width: parent.width;
+        height: parent.height;
+        source: Theme.c-wall-img;
+        image-fit: cover;
+    }
+    Pill { text: "Выберите, кому написать"; }
+}

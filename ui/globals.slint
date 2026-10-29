@@ -1,0 +1,408 @@
+import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow } from "types.slint";
+
+export global St {
+    in-out property <string> version;
+    in-out property <bool> maximized;
+    in-out property <length> win-h: 700px;
+    in-out property <length> win-w: 1180px;
+    // вход
+    in-out property <bool> logged-in;
+    in-out property <bool> login-busy;
+    in-out property <string> login-error;
+    in-out property <bool> webview-ok: true;   // установлен ли WebView2 (для входа через браузер)
+    in-out property <int> login-page;          // 0 главная, 1 ключ
+    // я
+    in-out property <string> me-name;
+    in-out property <string> me-id;
+    in-out property <string> me-balance;
+    in-out property <image> me-avatar;
+    in-out property <bool> me-has-avatar;
+    in-out property <string> me-letter: "?";
+    // аккаунты
+    in-out property <[AccountRow]> accounts;
+    in-out property <bool> adding-account;
+    // папки и список
+    in-out property <[FolderRow]> folders;
+    in-out property <string> folder: "all";
+    in-out property <[ChatRow]> chats;
+    in-out property <bool> chats-loading;
+    in-out property <string> net-error;
+    in-out property <bool> folder-dialog-open;
+    in-out property <string> folder-dialog-chat;
+    // правая часть: 0 чат, 1 профиль, 2 заказ, 3 браузер, 4 сделки и финансы
+    in-out property <int> pane;
+    // открытый чат
+    in-out property <bool> chat-open;
+    in-out property <string> cur-id;
+    in-out property <int> cur-kind;
+    in-out property <string> cur-title;
+    in-out property <string> cur-subtitle;
+    in-out property <bool> cur-online;
+    in-out property <bool> cur-muted;
+    in-out property <bool> cur-pinned;
+    in-out property <string> cur-peer-id;
+    in-out property <string> lot-name;
+    in-out property <string> lot-url;
+    in-out property <bool> show-fpt-banner;
+    in-out property <bool> cur-fpt;           // собеседник пользуется FunPay Tools (даже если плашку закрыли)
+    in-out property <string> pin-key;
+    in-out property <string> pin-author;
+    in-out property <string> pin-text;
+    in-out property <[MsgRow]> messages;
+    in-out property <bool> msgs-loading;
+    in-out property <bool> has-older;
+    in-out property <bool> loading-older;
+    in-out property <string> send-error;
+    in-out property <string> jump-key;
+    in-out property <int> jump-n;
+    in-out property <length> jump-y;
+    in-out property <int> jump-done;
+    in-out property <string> reply-key;
+    in-out property <string> reply-author;
+    in-out property <string> reply-text;
+    in-out property <bool> gchat-need-login;
+    in-out property <string> gchat-status;
+    in-out property <string> gchat-disabled;
+    in-out property <string> toast;
+    // стикеры
+    in-out property <bool> stickers-open;
+    in-out property <[PackRow]> sticker-packs;
+    in-out property <int> sticker-pack;
+    in-out property <[StickerCell]> sticker-cells;
+    in-out property <bool> stickers-loading;
+    // отправка картинок
+    in-out property <bool> sendbox-open;
+    in-out property <[Tile]> sendbox-tiles;
+    in-out property <float> sendbox-ratio;
+    in-out property <int> sendbox-count;
+    // карточка собеседника
+    in-out property <bool> card-open;
+    in-out property <bool> card-loading;
+    in-out property <string> card-name;
+    in-out property <string> card-status;
+    in-out property <bool> card-online;
+    in-out property <image> card-avatar;
+    in-out property <bool> card-has-avatar;
+    in-out property <string> card-letter;
+    in-out property <color> card-c1;
+    in-out property <color> card-c2;
+    in-out property <string> card-id;
+    in-out property <string> card-reg;
+    in-out property <string> card-rating;
+    in-out property <string> card-reviews;
+    in-out property <string> card-desc;
+    // профиль
+    in-out property <bool> pf-loading;
+    in-out property <string> pf-error;
+    in-out property <string> pf-id;
+    in-out property <bool> pf-is-me;
+    in-out property <string> pf-name;
+    in-out property <string> pf-status;
+    in-out property <bool> pf-online;
+    in-out property <image> pf-avatar;
+    in-out property <bool> pf-has-avatar;
+    in-out property <string> pf-letter;
+    in-out property <color> pf-c1;
+    in-out property <color> pf-c2;
+    in-out property <string> pf-reg;
+    in-out property <string> pf-reg-ago;
+    in-out property <string> pf-rating;
+    in-out property <string> pf-reviews-count;
+    in-out property <int> pf-tab;
+    in-out property <[OfferRow]> pf-offers;
+    in-out property <[ReviewRow]> pf-reviews;
+    in-out property <bool> pf-more;
+    in-out property <bool> pf-more-loading;
+    in-out property <bool> pf-can-write;
+    // описание профиля (сервер FunPay Tools)
+    in-out property <string> pf-desc;
+    in-out property <image> pf-banner;
+    in-out property <bool> pf-has-banner;
+    in-out property <bool> desc-open;          // окно правки своего описания
+    in-out property <bool> desc-busy;
+    in-out property <string> desc-status;      // ход подтверждения аккаунта / ошибка
+    in-out property <string> desc-draft;
+    // продажи, покупки, финансы
+    in-out property <int> deals-tab;           // 0 продажи, 1 покупки, 2 финансы
+    in-out property <string> deals-state;      // фильтр: "", paid, closed, refunded
+    in-out property <[TradeRow]> deals;
+    in-out property <[TxnRow]> txns;
+    in-out property <bool> deals-loading;
+    in-out property <bool> deals-more;
+    in-out property <bool> deals-more-loading;
+    in-out property <string> deals-error;
+    in-out property <string> fin-frozen;
+    // заказ
+    in-out property <bool> od-loading;
+    in-out property <string> od-error;
+    in-out property <string> od-id;
+    in-out property <string> od-status;
+    in-out property <string> od-game;
+    in-out property <string> od-desc;
+    in-out property <string> od-price;
+    in-out property <string> od-peer;
+    in-out property <string> od-peer-id;
+    in-out property <string> od-peer-letter;
+    in-out property <image> od-peer-avatar;
+    in-out property <bool> od-peer-has-avatar;
+    in-out property <[KV]> od-params;
+    in-out property <bool> od-can-refund;
+    in-out property <bool> od-can-confirm;
+    in-out property <bool> od-is-buyer;
+    in-out property <bool> od-has-review;
+    in-out property <int> od-rating;
+    in-out property <string> od-review;
+    in-out property <string> od-reply;
+    in-out property <bool> od-reply-mine;
+    in-out property <bool> od-busy;
+    in-out property <int> od-dialog;           // 0 нет, 1 возврат, 2 подтвердить, 3 ответ на отзыв, 4 свой отзыв, 5 удалить ответ, 6 удалить отзыв
+    // браузер
+    in-out property <string> browser-url;
+    in-out property <string> browser-title;
+    in-out property <bool> browser-loading;
+    in-out property <bool> browser-login;
+    // мини-окно браузера со вкладками (для ссылок, когда уже вошли)
+    in-out property <[BrowserTab]> tabs;
+    in-out property <int> tab-active;
+    in-out property <bool> mini-open;
+    in-out property <bool> mini-collapsed;
+    in-out property <bool> mini-big;
+    in-out property <length> mini-dx;           // сдвиг мини-окна, если его перетащили
+    in-out property <length> mini-dy;
+    // настройки
+    in-out property <bool> settings-open;
+    in-out property <int> theme-mode;
+    in-out property <bool> notifications: true;
+    in-out property <bool> sound: true;
+    in-out property <bool> on-top;
+    in-out property <bool> show-flood: true;
+    in-out property <bool> show-gchat: true;
+    in-out property <bool> avatar-busy;
+    in-out property <bool> keep-background: true;
+    in-out property <bool> autostart: true;
+    in-out property <bool> tray-ok;
+    in-out property <string> tg-theme;         // имя импортированной темы, "" если своя
+    // шаблоны, бинды и команды
+    in-out property <[TplRow]> templates;
+    in-out property <int> tpl-pos;              // 0 над полем, 1 под полем, 2 панель сверху, 3 панель снизу, 4 меню у стикеров
+    in-out property <int> tpl-shape;            // 0 скруглённые, 1 таблетки, 2 квадратные
+    in-out property <int> tpl-size: 1;          // 0 S, 1 M, 2 L
+    in-out property <int> tpl-fill: 1;          // 0 сплошная, 1 мягкая, 2 контур, 3 призрак
+    in-out property <int> tpl-align;            // 0 слева, 1 центр, 2 справа
+    in-out property <bool> tpl-full;
+    in-out property <bool> tpl-compact;
+    in-out property <bool> tpl-caps;
+    in-out property <bool> tpl-preview: true;
+    in-out property <bool> tpl-send-now;
+    in-out property <bool> tpl-open;            // окно шаблонов
+    in-out property <int> tpl-tab;              // 0 шаблоны, 1 вид, 2 автоответ
+    in-out property <bool> tpl-editing;
+    in-out property <string> tpl-e-id;
+    in-out property <string> tpl-e-name;
+    in-out property <string> tpl-e-text;
+    in-out property <string> tpl-e-hex;
+    in-out property <image> tpl-e-image;
+    in-out property <bool> tpl-e-has-image;
+    in-out property <bool> tpl-e-image-first: true;
+    in-out property <int> tpl-e-bind;
+    in-out property <[TplRow]> cmd-hits;
+    in-out property <[AutoRow]> autos;
+    in-out property <bool> auto-on: true;
+    in-out property <bool> auto-editing;
+    in-out property <string> au-e-id;
+    in-out property <string> au-e-trigger;
+    in-out property <string> au-e-response;
+    in-out property <bool> au-e-exact: true;
+    in-out property <bool> au-e-cs;
+    // подсказка у курсора (кнопки шаблонов, кнопка отправки)
+    in-out property <string> tip;
+    in-out property <length> tip-x;
+    in-out property <length> tip-y;
+    // переписать с ИИ
+    in-out property <bool> ai-busy;
+    in-out property <string> ai-orig;           // что было до переписывания (чтобы вернуть)
+    in-out property <string> ai-result;
+    in-out property <int> ai-n;
+    // цветные ники
+    in-out property <bool> epic-anim: true;
+    in-out property <NickStyle> me-nick;
+    in-out property <NickStyle> cur-nick;
+    in-out property <NickStyle> pf-nick;
+    in-out property <NickStyle> card-nick;
+    in-out property <bool> epic-open;
+    in-out property <[NickStyle]> epic-examples;
+    in-out property <[string]> epic-names;
+    // уведомления
+    in-out property <bool> notes-open;          // окно настроек уведомлений
+    in-out property <bool> pop-custom: true;
+    in-out property <int> pop-corner: 3;
+    in-out property <int> pop-count: 3;
+    in-out property <bool> pop-icon: true;
+    in-out property <bool> pop-name: true;
+    in-out property <bool> pop-text: true;
+    in-out property <bool> pop-focus;
+    // обновления
+    in-out property <bool> auto-update: true;
+    in-out property <string> upd-status;
+    in-out property <string> upd-version;       // найденная новая версия
+    in-out property <bool> upd-busy;
+    in-out property <bool> upd-ready;           // скачано, можно перезапустить
+    // обучение при первом запуске
+    in-out property <string> tour;              // шаг, "" если выключено
+    in-out property <int> tour-n;
+    in-out property <string> tour-title;
+    in-out property <string> tour-text;
+    in-out property <string> tour-next;         // подпись кнопки, "" если ждём действия
+    in-out property <string> tour-target;
+    in-out property <string> tour-seen;         // какая цель уже сообщила, где она
+    in-out property <length> tour-x;
+    in-out property <length> tour-y;
+    in-out property <length> tour-w;
+    in-out property <length> tour-h;
+    in-out property <string> tour-draft;
+    in-out property <int> tour-draft-n;
+    // просмотр картинки
+    in-out property <bool> viewer-open;
+    in-out property <image> viewer-img;
+    in-out property <bool> viewer-has;
+    in-out property <string> viewer-url;
+    in-out property <int> viewer-index;
+    in-out property <int> viewer-count;
+}
+
+export global Api {
+    // окно
+    callback win-drag();
+    callback win-min();
+    callback win-max();
+    callback win-close();
+    callback win-resize(int);
+    // вход
+    callback login-browser();
+    callback login-key(string);
+    callback login-import();
+    callback logout();
+    callback switch-account(string);
+    callback add-account();
+    callback cancel-add-account();
+    callback remove-account(string);
+    // список
+    callback select-folder(string);
+    callback search-changed(string);
+    callback chat-menu(string, int, string, string);   // id, kind, действие, аргумент
+    callback create-folder(string);
+    callback delete-folder(string);
+    callback open-chat(string, int);
+    callback close-chat();
+    // переписка
+    callback send-text(string);
+    callback attach();
+    callback paste-image() -> bool;
+    // Единая вставка из буфера: если там картинка — уходит в окно отправки и вернётся "",
+    // иначе возвращается текст из буфера (всё читается на стороне Rust, без гонок с бэкендом).
+    callback paste-clipboard() -> string;
+    // Копирование и вырезание через своё обращение к буферу Windows (байтовые смещения выделения Slint).
+    // Пустое выделение копирует весь текст.
+    callback copy-range(string, int, int);
+    callback cut-range(string, int, int) -> string;
+    callback load-older();
+    callback msg-action(string, string, string);       // key, действие, аргумент
+    callback cancel-reply();
+    callback jump-to(string);
+    callback copy-text(string);
+    callback retry(string);
+    callback dismiss-fpt();
+    callback undismiss-fpt();
+    callback gchat-login();
+    callback open-card();
+    // стикеры и отправка картинок
+    callback stickers-toggle();
+    callback sticker-pack(int);
+    callback sticker-send(string);
+    callback sendbox-add();
+    callback sendbox-remove(int);
+    callback sendbox-send(string);
+    callback sendbox-cancel();
+    // картинки
+    callback open-image(string);
+    callback open-avatar(int);                   // 0 карточка собеседника, 1 профиль
+    callback viewer-step(int);
+    callback save-image(string);
+    callback copy-image(string);
+    // экраны
+    callback open-profile(string);
+    callback open-order(string);
+    callback pane-back();
+    callback pf-more-reviews();
+    callback pf-write();
+    callback od-action(string, string, int);
+    callback open-deals(int);
+    callback deals-tab(int);
+    callback deals-filter(string);
+    callback deals-more();
+    callback desc-edit();
+    callback desc-save(string);
+    // браузер
+    callback open-url(string);
+    callback open-external(string);
+    callback browser-back();
+    callback browser-forward();
+    callback browser-reload();
+    callback browser-close();
+    callback tab-select(int);
+    callback tab-close(int);
+    callback mini-collapse(bool);
+    callback mini-close-all();
+    callback mini-moved();
+    // настройки
+    callback change-avatar();
+    callback set-theme(int);
+    callback set-notifications(bool);
+    callback set-sound(bool);
+    callback set-on-top(bool);
+    callback set-show-flood(bool);
+    callback set-show-gchat(bool);
+    callback set-keep-background(bool);
+    callback set-autostart(bool);
+    callback import-theme();
+    callback reset-theme();
+    callback open-log();
+    // шаблоны
+    callback tpl-use(string) -> string;          // "" если уже отправлено, иначе текст для поля
+    callback tpl-bind(int) -> string;
+    callback cmd-query(string);
+    callback starts-slash(string) -> bool;
+    callback msg-link(string, int) -> bool;      // клик по ссылке в тексте сообщения
+    callback tpl-new();
+    callback tpl-edit(string);
+    callback tpl-save();
+    callback tpl-delete(string);
+    callback tpl-move(string, int);
+    callback tpl-pick-image();
+    callback tpl-clear-image();
+    callback tpl-set(string, int);
+    callback auto-new();
+    callback auto-edit(string);
+    callback auto-save();
+    callback auto-delete(string);
+    callback auto-toggle(string, bool);
+    callback set-auto-on(bool);
+    // ИИ
+    callback ai-rewrite(string);
+    // цветные ники
+    callback set-epic-anim(bool);
+    callback epic-get();
+    // уведомления
+    callback pop-set(string, int);
+    callback pop-test();
+    // обновления
+    callback set-auto-update(bool);
+    callback upd-check();
+    callback upd-restart();
+    callback open-contact(string);
+    // обучение
+    callback tour-next();
+    callback tour-skip();
+    callback tour-event(string);
+    callback tour-start();
+}

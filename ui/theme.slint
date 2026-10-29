@@ -1,0 +1,77 @@
+
+export global Theme {
+    in-out property <bool> dark: false;
+    // тема из Telegram (.tdesktop-theme / .attheme): цвета и обои задаются из Rust
+    in-out property <bool> custom: false;
+    in-out property <color> c-wall1;
+    in-out property <color> c-text-in;
+    in-out property <color> c-on-accent;
+    in-out property <color> c-on-sel;
+    in-out property <color> c-text-out;
+    in-out property <color> c-wall2;
+    in-out property <image> c-wall-img;
+    in-out property <bool> c-has-wall-img;
+    in-out property <bool> c-wall-tiled;
+    in-out property <color> c-accent;
+    in-out property <color> c-accent-soft;
+    in-out property <color> c-panel;
+    in-out property <color> c-field;
+    in-out property <color> c-line;
+    in-out property <color> c-ink;
+    in-out property <color> c-muted;
+    in-out property <color> c-faint;
+    in-out property <color> c-sel;
+    in-out property <color> c-hover;
+    in-out property <color> c-rail;
+    in-out property <color> c-rail-tx;
+    in-out property <color> c-rail-on;
+    in-out property <color> c-bubble-in;
+    in-out property <color> c-bubble-out;
+    in-out property <color> c-meta-in;
+    in-out property <color> c-meta-out;
+    in-out property <color> c-check;
+    in-out property <color> c-pill;
+    in-out property <color> c-mbadge;
+    in-out property <color> c-danger;
+    in-out property <color> c-title;
+    in-out property <color> c-kb;
+    in-out property <color> c-ok;
+    in-out property <color> c-shadow;
+    out property <color> accent: custom ? c-accent : (dark ? #5A9BEA : #3A7FD5);
+    out property <color> accent-soft: custom ? c-accent-soft : (dark ? #5A9BEA33 : #3A7FD522);
+    out property <color> panel: custom ? c-panel : (dark ? #161A20 : #FFFFFF);
+    out property <color> field: custom ? c-field : (dark ? #0F1318 : #F1F3F6);
+    out property <color> line: custom ? c-line : (dark ? #232A33 : #E7EBF0);
+    out property <color> ink: custom ? c-ink : (dark ? #F2F4F7 : #0E1116);
+    out property <color> muted: custom ? c-muted : (dark ? #8C96A3 : #707A89);
+    out property <color> faint: custom ? c-faint : (dark ? #5F6875 : #A2AAB6);
+    out property <color> sel: custom ? c-sel : (dark ? #2F6DB8 : #3A7FD5);
+    out property <color> hover: custom ? c-hover : (dark ? #1D232B : #F2F5F9);
+    out property <color> rail: custom ? c-rail : (dark ? #0D1015 : #1E2C40);
+    out property <color> rail-tx: custom ? c-rail-tx : (dark ? #6E7A8A : #8EA0B8);
+    out property <color> rail-on: custom ? c-rail-on : (dark ? #1B2230 : #2A3B55);
+    out property <color> bubble-in: custom ? c-bubble-in : (dark ? #1E242C : #FFFFFF);
+    out property <color> bubble-out: custom ? c-bubble-out : (dark ? #2A4D7A : #DDEEFF);
+    out property <color> meta-in: custom ? c-meta-in : (dark ? #7F8A99 : #9AA3AF);
+    out property <color> meta-out: custom ? c-meta-out : (dark ? #9DBBE3 : #5E8DC6);
+    out property <color> check: custom ? c-check : (dark ? #8FC2FF : #3A7FD5);
+    out property <color> pill: custom ? c-pill : (dark ? #00000070 : #26487670);
+    out property <color> mbadge: custom ? c-mbadge : (dark ? #3A424D : #B4BCC7);
+    out property <color> danger: custom ? c-danger : (#E5484D);
+    out property <color> title: custom ? c-title : (dark ? #0F1318 : #EEF2F6);
+    out property <color> kb: custom ? c-kb : (dark ? #FFFFFF1F : #2A4E8466);
+    out property <color> ok: custom ? c-ok : (#1FA463);
+    out property <color> shadow: custom ? c-shadow : (dark ? #00000080 : #0A1E3C26);
+    out property <brush> wall: custom
+        ? @linear-gradient(140deg, c-wall1 0%, c-wall2 100%)
+        : dark
+        ? @linear-gradient(140deg, #13263D 0%, #191B33 50%, #0F2A27 100%)
+        : @linear-gradient(140deg, #A9CBF3 0%, #C3C3F0 48%, #AEDDCF 100%);
+    out property <bool> show-pattern: !custom;
+    out property <color> text-in: custom ? c-text-in : ink;
+    // текст поверх акцентного цвета и выделенного чата
+    out property <color> on-accent: custom ? c-on-accent : #FFFFFF;
+    out property <color> on-sel: custom ? c-on-sel : #FFFFFF;
+    out property <color> text-out: custom ? c-text-out : ink;
+    out property <image> wall-pattern: dark ? @image-url("wp_dark.svg") : @image-url("wp_light.svg");
+}

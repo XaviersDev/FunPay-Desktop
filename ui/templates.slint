@@ -1,0 +1,685 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { TplRow, AutoRow } from "types.slint";
+import { IconButton, Toggle, PrimaryButton, Dim, MenuCard, TourMark } from "widgets.slint";
+
+// ============================================================ поле ввода с буфером обмена
+
+export component Field inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> multi;
+    in property <length> font-size: 14px;
+    callback edited();
+    height: multi ? 110px : 38px;
+    border-radius: 9px;
+    background: Theme.field;
+    border-width: ti.has-focus ? 1.5px : 0px;
+    border-color: Theme.accent;
+    public function focus-it() { ti.focus(); }
+    public function insert(s: string) {
+        ti.text = ti.text + s;
+        root.text = ti.text;
+        ti.focus();
+        ti.set-selection-offsets(100000, 100000);
+        root.edited();
+    }
+    FocusScope {
+        x: 11px;
+        y: root.multi ? 9px : 0px;
+        width: parent.width - 22px;
+        height: parent.height - (root.multi ? 18px : 0px);
+        capture-key-pressed(e) => {
+            if (e.modifiers.control && (e.text == "v" || e.text == "V" || e.text == "м" || e.text == "М")) {
+                root.insert(Api.paste-clipboard());
+                return accept;
+            }
+            if (e.modifiers.control && (e.text == "c" || e.text == "C" || e.text == "с" || e.text == "С")) {
+                if (ti.anchor-position-byte-offset != ti.cursor-position-byte-offset) {
+                    Api.copy-range(ti.text, ti.anchor-position-byte-offset, ti.cursor-position-byte-offset);
+                }
+                return accept;
+            }
+            if (e.modifiers.control && (e.text == "x" || e.text == "X" || e.text == "ч" || e.text == "Ч")) {
+                if (ti.anchor-position-byte-offset != ti.cursor-position-byte-offset) {
+                    let lo = min(ti.anchor-position-byte-offset, ti.cursor-position-byte-offset);
+                    ti.text = Api.cut-range(ti.text, ti.anchor-position-byte-offset, ti.cursor-position-byte-offset);
+                    root.text = ti.text;
+                    ti.set-selection-offsets(lo, lo);
+                    root.edited();
+                }
+                return accept;
+            }
+            if (e.modifiers.control && (e.text == "a" || e.text == "A" || e.text == "ф" || e.text == "Ф")) {
+                ti.select-all();
+                return accept;
+            }
+            return reject;
+        }
+        fl := Flickable {
+            width: parent.width;
+            height: parent.height;
+            content-height: max(self.height, ti.preferred-height);
+            ti := TextInput {
+                width: parent.width;
+                height: max(fl.height, self.preferred-height);
+                text <=> root.text;
+                wrap: root.multi ? word-wrap : no-wrap;
+                single-line: !root.multi;
+                vertical-alignment: root.multi ? top : center;
+                font-size: root.font-size;
+                color: Theme.ink;
+                selection-background-color: Theme.accent-soft;
+                selection-foreground-color: Theme.ink;
+                edited => { root.edited(); }
+            }
+        }
+    }
+    if ti.text == "": Text {
+        x: 11px;
+        y: root.multi ? 9px : (parent.height - self.height) / 2;
+        text: root.placeholder;
+        color: Theme.faint;
+        font-size: root.font-size;
+    }
+}
+
+// ============================================================ кнопка-шаблон
+
+export component TplButton inherits Rectangle {
+    in property <TplRow> t;
+    callback use();
+    property <length> h: St.tpl-size == 0 ? 26px : St.tpl-size == 1 ? 31px : 37px;
+    property <length> fs: St.tpl-size == 0 ? 12px : St.tpl-size == 1 ? 13px : 14px;
+    property <color> c: t.has-color ? t.color : Theme.accent;
+    property <length> padx: St.tpl-compact ? 8px : St.tpl-size == 2 ? 16px : 12px;
+    height: h;
+    min-width: lbl.preferred-width + padx * 2;
+    preferred-width: lbl.preferred-width + padx * 2 + (t.has-image ? 18px : 0px);
+    horizontal-stretch: St.tpl-full ? 1 : 0;
+    border-radius: St.tpl-shape == 1 ? h / 2 : St.tpl-shape == 2 ? 3px : 8px;
+    background: St.tpl-fill == 0 ? (ta.pressed ? c.darker(0.12) : ta.has-hover ? c.brighter(0.08) : c)
+        : St.tpl-fill == 1 ? c.with-alpha(ta.has-hover ? 0.24 : 0.14)
+        : St.tpl-fill == 2 ? (ta.has-hover ? c.with-alpha(0.08) : transparent)
+        : (ta.has-hover ? c.with-alpha(0.12) : transparent);
+    border-width: St.tpl-fill == 2 ? 1.5px : 0px;
+    border-color: c;
+    animate background { duration: 90ms; }
+    HorizontalLayout {
+        padding-left: root.padx;
+        padding-right: root.padx;
+        spacing: 5px;
+        alignment: St.tpl-align == 0 && !St.tpl-full ? start : St.tpl-align == 2 ? end : center;
+        if t.has-image: Image {
+            source: @image-url("icons/image.svg");
+            width: 14px;
+            colorize: St.tpl-fill == 0 ? t.fg : root.c;
+        }
+        lbl := Text {
+            text: t.label;
+            color: St.tpl-fill == 0 ? t.fg : root.c;
+            font-size: root.fs;
+            font-weight: 600;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { St.tip = ""; root.use(); }
+    }
+    // превью текста при наведении
+    Timer {
+        interval: 450ms;
+        running: St.tpl-preview && ta.has-hover && St.tip == "";
+        triggered => {
+            St.tip-x = root.absolute-position.x;
+            St.tip-y = root.absolute-position.y;
+            St.tip = t.preview + (t.has-image ? "\n+ картинка" : "") + (t.bind > 0 ? "\nAlt+" + t.bind : "");
+        }
+    }
+    property <bool> hov: ta.has-hover;
+    changed hov => { if (!self.hov) { St.tip = ""; } }
+}
+
+// ряд кнопок с переносом
+export component TplBar inherits Rectangle {
+    callback use(string);
+    in property <bool> panel;   // отдельная полоса (сверху или снизу панели)
+    height: fb.preferred-height;
+    background: panel ? Theme.panel : transparent;
+    TourMark { tid: "tpl-bar"; }
+    fb := FlexboxLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: St.tpl-compact ? 4px : 6px;
+        alignment: St.tpl-full ? stretch : St.tpl-align == 1 ? center : St.tpl-align == 2 ? end : start;
+        for t in St.templates: TplButton {
+            t: t;
+            use => { root.use(t.id); }
+        }
+    }
+}
+
+// список шаблонов в меню (кнопка у стикеров)
+export component TplMenuList inherits Rectangle {
+    callback use(string);
+    callback settings();
+    width: 300px;
+    height: min(lst.preferred-height, 380px);
+    sv := ScrollView {
+        content-width: self.visible-width;
+        lst := VerticalLayout {
+            padding-top: 6px;
+            padding-bottom: 6px;
+            if St.templates.length == 0: Rectangle {
+                height: 56px;
+                Text {
+                    x: 14px;
+                    width: parent.width - 28px;
+                    text: "Шаблонов пока нет. Создайте первый, и он появится здесь.";
+                    color: Theme.muted;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                }
+            }
+            for t in St.templates: Rectangle {
+                height: 50px;
+                background: ta.has-hover ? Theme.hover : transparent;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 11px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle { width: 10px; height: 10px; border-radius: 5px; background: t.has-color ? t.color : Theme.accent; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 1px;
+                        horizontal-stretch: 1;
+                        Text { text: t.name; color: Theme.ink; font-size: 13.5px; font-weight: 600; overflow: elide; }
+                        Text { text: t.preview; color: Theme.muted; font-size: 12px; overflow: elide; wrap: no-wrap; }
+                    }
+                    if t.bind > 0: Text { text: "Alt+" + t.bind; color: Theme.faint; font-size: 11.5px; vertical-alignment: center; }
+                    if t.has-image: VerticalLayout {
+                        alignment: center;
+                        Image { source: @image-url("icons/image.svg"); width: 16px; colorize: Theme.faint; }
+                    }
+                }
+                ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.use(t.id); }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+            Rectangle {
+                height: 38px;
+                background: sa.has-hover ? Theme.hover : transparent;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    spacing: 11px;
+                    Image { source: @image-url("icons/tune.svg"); width: 18px; colorize: Theme.accent; }
+                    Text { text: St.templates.length == 0 ? "Создать шаблон" : "Настроить шаблоны"; color: Theme.accent; font-size: 13.5px; font-weight: 600; vertical-alignment: center; }
+                }
+                sa := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.settings(); }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================ окно настроек шаблонов
+
+component Seg inherits Rectangle {
+    in property <[string]> items;
+    in property <int> value;
+    callback picked(int);
+    height: 32px;
+    border-radius: 9px;
+    background: Theme.field;
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 2px;
+        for it[i] in root.items: Rectangle {
+            border-radius: 7px;
+            background: root.value == i ? Theme.panel : sa.has-hover ? Theme.hover : transparent;
+            drop-shadow-blur: root.value == i ? 3px : 0px;
+            drop-shadow-color: Theme.shadow;
+            horizontal-stretch: 1;
+            Text {
+                text: it;
+                color: root.value == i ? Theme.ink : Theme.muted;
+                font-size: 12.5px;
+                font-weight: root.value == i ? 600 : 500;
+            }
+            sa := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.picked(i); }
+            }
+        }
+    }
+}
+
+component OptRow inherits Rectangle {
+    in property <string> title;
+    in property <string> hint;
+    in-out property <bool> checked;
+    callback toggled(bool);
+    height: ol.preferred-height;
+    ol := HorizontalLayout {
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text { text: root.title; color: Theme.ink; font-size: 13.5px; }
+            if root.hint != "": Text { text: root.hint; color: Theme.muted; font-size: 12px; wrap: word-wrap; }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle { checked <=> root.checked; toggled(v) => { root.toggled(v); } }
+        }
+    }
+}
+
+component Label inherits Text {
+    color: Theme.muted;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+component SmallBtn inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon;
+    in property <bool> danger;
+    in property <bool> primary;
+    callback clicked();
+    height: 32px;
+    border-radius: 8px;
+    min-width: sl.preferred-width;
+    background: primary ? (ta.has-hover ? Theme.accent.brighter(0.08) : Theme.accent) : ta.has-hover ? Theme.hover : Theme.field;
+    sl := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 6px;
+        alignment: center;
+        if root.has-icon: Image { source: root.icon; width: 16px; colorize: root.primary ? Theme.on-accent : root.danger ? Theme.danger : Theme.muted; }
+        Text {
+            text: root.text;
+            color: root.primary ? Theme.on-accent : root.danger ? Theme.danger : Theme.ink;
+            font-size: 13px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component TemplatesDialog inherits Rectangle {
+    property <bool> shown;
+    property <length> cw: min(620px, root.width - 24px);
+    property <length> inner: self.cw - 40px;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim {
+        dismiss => { St.tpl-open = false; St.tpl-editing = false; St.auto-editing = false; }
+    }
+    card := Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.96;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: root.cw;
+        height: min(root.height - 24px, 640px);
+        border-radius: 14px;
+        background: Theme.panel;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: Theme.shadow;
+        clip: true;
+        TouchArea { }
+        VerticalLayout {
+            // шапка
+            Rectangle {
+                height: 54px;
+                HorizontalLayout {
+                    padding-left: 20px;
+                    padding-right: 8px;
+                    spacing: 6px;
+                    if St.tpl-editing || St.auto-editing: VerticalLayout {
+                        alignment: center;
+                        IconButton {
+                            size: 32px;
+                            icon-size: 20px;
+                            icon: @image-url("icons/arrow_back.svg");
+                            clicked => { St.tpl-editing = false; St.auto-editing = false; }
+                        }
+                    }
+                    Text {
+                        text: St.tpl-editing ? (St.tpl-e-id == "" ? "Новый шаблон" : "Шаблон") : "Шаблоны";
+                        color: Theme.ink;
+                        font-size: 17px;
+                        font-weight: 650;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton {
+                            icon: @image-url("icons/close.svg");
+                            clicked => { St.tpl-open = false; St.tpl-editing = false; St.auto-editing = false; }
+                        }
+                    }
+                }
+            }
+            if !St.tpl-editing && !St.auto-editing: HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-bottom: 8px;
+                Seg {
+                    items: ["Шаблоны", "Вид кнопок"];
+                    value: St.tpl-tab;
+                    picked(i) => { St.tpl-tab = i; }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+
+            // ---------------- список шаблонов
+            if St.tpl-tab == 0 && !St.tpl-editing: ScrollView {
+                vertical-stretch: 1;
+                content-width: self.visible-width;
+                VerticalLayout {
+                    alignment: start;
+                    padding: 20px;
+                    padding-top: 14px;
+                    spacing: 8px;
+                    Text {
+                        width: root.inner;
+                        text: "Кнопки под рукой в каждом чате. В тексте работают переменные: $username, $lot_name, $order_id и другие. Alt+1…9 отправляют шаблон с клавиатуры, а «/» в начале сообщения ищет шаблон по названию.";
+                        color: Theme.muted;
+                        font-size: 12.5px;
+                        wrap: word-wrap;
+                    }
+                    for t[i] in St.templates: Rectangle {
+                        height: 56px;
+                        border-radius: 10px;
+                        background: ra.has-hover ? Theme.hover : Theme.field;
+                        ra := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { Api.tpl-edit(t.id); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 6px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 12px; height: 12px; border-radius: 6px; background: t.has-color ? t.color : Theme.accent; }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+                                Text { text: t.name; color: Theme.ink; font-size: 14px; font-weight: 600; overflow: elide; }
+                                Text { text: t.text; color: Theme.muted; font-size: 12.5px; overflow: elide; wrap: no-wrap; }
+                            }
+                            if t.bind > 0: Text { text: "Alt+" + t.bind; color: Theme.faint; font-size: 12px; vertical-alignment: center; }
+                            if t.has-image: VerticalLayout {
+                                alignment: center;
+                                Image { source: @image-url("icons/image.svg"); width: 18px; colorize: Theme.faint; }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                IconButton {
+                                    size: 28px;
+                                    icon-size: 18px;
+                                    icon: @image-url("icons/keyboard_arrow_up.svg");
+                                    clicked => { Api.tpl-move(t.id, -1); }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                IconButton {
+                                    size: 28px;
+                                    icon-size: 18px;
+                                    icon: @image-url("icons/keyboard_arrow_down.svg");
+                                    clicked => { Api.tpl-move(t.id, 1); }
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        SmallBtn {
+                            text: "Новый шаблон";
+                            has-icon: true;
+                            icon: @image-url("icons/add.svg");
+                            primary: true;
+                            clicked => { Api.tpl-new(); }
+                            TourMark { tid: "tpl-new"; }
+                        }
+                    }
+                    OptRow {
+                        title: "Отправлять сразу по клику";
+                        hint: "Иначе текст встаёт в поле, и его можно поправить. Шаблоны с картинкой отправляются сразу.";
+                        checked: St.tpl-send-now;
+                        toggled(v) => { St.tpl-send-now = v; Api.tpl-set("send-now", v ? 1 : 0); }
+                    }
+                }
+            }
+
+            // ---------------- редактор шаблона
+            if St.tpl-editing: ScrollView {
+                vertical-stretch: 1;
+                content-width: self.visible-width;
+                VerticalLayout {
+                    alignment: start;
+                    padding: 20px;
+                    padding-top: 14px;
+                    spacing: 8px;
+                    Label { text: "Название"; }
+                    Field { text <=> St.tpl-e-name; placeholder: "Например, Привет"; }
+                    Label { text: "Текст"; }
+                    tx := Field { text <=> St.tpl-e-text; placeholder: "$welcome, $username! Спасибо за заказ $order_id"; multi: true; }
+                    FlexboxLayout {
+                        spacing: 5px;
+                        for v in [
+                            { k: "$username", h: "ник" }, { k: "$welcome", h: "приветствие" }, { k: "$lot_name", h: "лот" },
+                            { k: "$order_id", h: "заказ" }, { k: "$order_link", h: "ссылка" }, { k: "$order_title", h: "товар" },
+                            { k: "$message_text", h: "его сообщение" }, { k: "$date", h: "дата" }, { k: "$time", h: "время" },
+                            { k: "$date_text", h: "10 января" }
+                        ]: Rectangle {
+                            height: 26px;
+                            border-radius: 7px;
+                            min-width: vl.preferred-width + 18px;
+                            preferred-width: vl.preferred-width + 18px;
+                            background: va.has-hover ? Theme.accent-soft : Theme.field;
+                            vl := HorizontalLayout {
+                                x: 8px;
+                                spacing: 5px;
+                                Text { text: v.k; color: Theme.accent; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                                Text { text: v.h; color: Theme.faint; font-size: 11.5px; vertical-alignment: center; }
+                            }
+                            va := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { tx.insert(v.k); }
+                            }
+                        }
+                    }
+                    Label { text: "Цвет кнопки"; }
+                    HorizontalLayout {
+                        spacing: 7px;
+                        alignment: start;
+                        for p in [
+                            { c: Theme.accent, h: "" }, { c: #3390EC, h: "#3390EC" }, { c: #2EA44F, h: "#2EA44F" }, { c: #E5A50A, h: "#E5A50A" },
+                            { c: #E8590C, h: "#E8590C" }, { c: #E03E3E, h: "#E03E3E" }, { c: #C2185B, h: "#C2185B" },
+                            { c: #8E5CF7, h: "#8E5CF7" }, { c: #00A3A3, h: "#00A3A3" }, { c: #5F6B7A, h: "#5F6B7A" }
+                        ]: Rectangle {
+                            width: 26px;
+                            height: 26px;
+                            border-radius: 13px;
+                            background: p.c;
+                            border-width: St.tpl-e-hex == p.h ? 3px : 0px;
+                            border-color: Theme.panel;
+                            drop-shadow-blur: St.tpl-e-hex == p.h ? 0px : 0px;
+                            if St.tpl-e-hex == p.h: Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: 16px;
+                                border-width: 2px;
+                                border-color: p.c;
+                                background: transparent;
+                            }
+                            if p.h == "": Text { text: "А"; color: white; font-size: 11px; font-weight: 700; }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { St.tpl-e-hex = p.h; }
+                            }
+                        }
+                        Rectangle { width: 4px; }
+                        Field {
+                            width: 96px;
+                            height: 30px;
+                            font-size: 12.5px;
+                            text <=> St.tpl-e-hex;
+                            placeholder: "#RRGGBB";
+                        }
+                    }
+                    Label { text: "Картинка (по желанию)"; }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+                        if St.tpl-e-has-image: Rectangle {
+                            width: 64px;
+                            height: 64px;
+                            border-radius: 8px;
+                            clip: true;
+                            Image { source: St.tpl-e-image; width: 64px; height: 64px; image-fit: cover; }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 6px;
+                            HorizontalLayout {
+                                spacing: 6px;
+                                SmallBtn {
+                                    text: St.tpl-e-has-image ? "Другая картинка" : "Выбрать картинку";
+                                    has-icon: true;
+                                    icon: @image-url("icons/add_photo_alternate.svg");
+                                    clicked => { Api.tpl-pick-image(); }
+                                }
+                                if St.tpl-e-has-image: SmallBtn {
+                                    text: "Убрать";
+                                    danger: true;
+                                    clicked => { Api.tpl-clear-image(); }
+                                }
+                            }
+                            if St.tpl-e-has-image: HorizontalLayout {
+                                spacing: 8px;
+                                Toggle { checked: St.tpl-e-image-first; toggled(v) => { St.tpl-e-image-first = v; } }
+                                Text { text: "Картинка перед текстом"; color: Theme.ink; font-size: 13px; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                    Label { text: "Бинд: Alt и цифра"; }
+                    Seg {
+                        items: ["нет", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+                        value: St.tpl-e-bind;
+                        picked(i) => { St.tpl-e-bind = i; }
+                    }
+                    Rectangle { height: 6px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        SmallBtn {
+                            text: "Сохранить";
+                            primary: true;
+                            clicked => { Api.tpl-save(); }
+                            TourMark { tid: "tpl-save"; }
+                        }
+                        if St.tpl-e-id != "": SmallBtn {
+                            text: "Удалить";
+                            danger: true;
+                            has-icon: true;
+                            icon: @image-url("icons/delete.svg");
+                            clicked => { Api.tpl-delete(St.tpl-e-id); }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                }
+            }
+
+            // ---------------- вид кнопок
+            if St.tpl-tab == 1 && !St.tpl-editing && !St.auto-editing: ScrollView {
+                vertical-stretch: 1;
+                content-width: self.visible-width;
+                VerticalLayout {
+                    alignment: start;
+                    padding: 20px;
+                    padding-top: 14px;
+                    spacing: 8px;
+                    // живой пример
+                    Rectangle {
+                        height: pv.preferred-height + 8px;
+                        border-radius: 10px;
+                        background: Theme.field;
+                        pv := TplBar { width: parent.width; y: 4px; }
+                    }
+                    Label { text: "Где показывать"; }
+                    Seg {
+                        items: ["Над полем", "Под полем", "Панель сверху", "Панель снизу", "Меню"];
+                        value: St.tpl-pos;
+                        picked(i) => { St.tpl-pos = i; Api.tpl-set("pos", i); }
+                    }
+                    Text {
+                        width: root.inner;
+                        text: "В узком окне кнопки сами прячутся в меню у стикеров, чтобы не занимать место.";
+                        color: Theme.faint;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                    Label { text: "Форма"; }
+                    Seg {
+                        items: ["Скруглённые", "Таблетки", "Квадратные"];
+                        value: St.tpl-shape;
+                        picked(i) => { St.tpl-shape = i; Api.tpl-set("shape", i); }
+                    }
+                    Label { text: "Размер"; }
+                    Seg {
+                        items: ["Маленькие", "Средние", "Большие"];
+                        value: St.tpl-size;
+                        picked(i) => { St.tpl-size = i; Api.tpl-set("size", i); }
+                    }
+                    Label { text: "Заливка"; }
+                    Seg {
+                        items: ["Сплошная", "Мягкая", "Контур", "Призрак"];
+                        value: St.tpl-fill;
+                        picked(i) => { St.tpl-fill = i; Api.tpl-set("fill", i); }
+                    }
+                    Label { text: "Текст"; }
+                    Seg {
+                        items: ["Слева", "По центру", "Справа"];
+                        value: St.tpl-align;
+                        picked(i) => { St.tpl-align = i; Api.tpl-set("align", i); }
+                    }
+                    OptRow { title: "На всю ширину"; checked: St.tpl-full; toggled(v) => { St.tpl-full = v; Api.tpl-set("full", v ? 1 : 0); } }
+                    OptRow { title: "Компактно"; checked: St.tpl-compact; toggled(v) => { St.tpl-compact = v; Api.tpl-set("compact", v ? 1 : 0); } }
+                    OptRow { title: "ЗАГЛАВНЫЕ"; checked: St.tpl-caps; toggled(v) => { St.tpl-caps = v; Api.tpl-set("caps", v ? 1 : 0); } }
+                    OptRow { title: "Превью при наведении"; checked: St.tpl-preview; toggled(v) => { St.tpl-preview = v; Api.tpl-set("preview", v ? 1 : 0); } }
+                }
+            }
+
+        }
+    }
+}

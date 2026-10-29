@@ -1,0 +1,376 @@
+import { Theme } from "theme.slint";
+import { Api, St } from "globals.slint";
+
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: 38px;
+    in property <length> icon-size: 22px;
+    in property <color> tint: Theme.muted;
+    in property <bool> active: false;
+    callback clicked();
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: ta.has-hover || active ? Theme.hover : transparent;
+    Image {
+        source: icon;
+        width: icon-size;
+        height: icon-size;
+        colorize: active ? Theme.accent : tint;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Avatar inherits Rectangle {
+    in property <image> img;
+    in property <bool> has-img;
+    in property <string> letter;
+    in property <color> c1: #72C6FF;
+    in property <color> c2: #3A86E0;
+    in property <length> size: 44px;
+    in property <int> kind: 0;
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    clip: true;
+    background: @linear-gradient(160deg, c1 0%, c2 100%);
+    if !has-img && kind == 0: Text {
+        text: letter;
+        color: white;
+        font-size: size * 0.4;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if !has-img && kind != 0: Image {
+        width: size * 0.52;
+        height: size * 0.52;
+        colorize: white;
+        source: kind == 1 ? @image-url("icons/public.svg") : kind == 2 ? @image-url("icons/sports_esports-fill.svg") : @image-url("icons/forum-fill.svg");
+    }
+    if has-img: Image {
+        width: parent.width;
+        height: parent.height;
+        source: img;
+        image-fit: cover;
+    }
+}
+
+export component Badge inherits Rectangle {
+    in property <int> count;
+    in property <bool> muted;
+    in property <color> ring: transparent;
+    property <string> label: count < 0 ? "" : count > 99 ? "99+" : count;
+    height: count < 0 ? 12px : 20px;
+    width: count < 0 ? 12px : max(20px, t.preferred-width + 12px);
+    border-radius: self.height / 2;
+    background: muted ? Theme.mbadge : Theme.accent;
+    border-width: ring == transparent ? 0 : 2px;
+    border-color: ring;
+    t := Text {
+        text: label;
+        color: white;
+        font-size: 11.5px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component Pill inherits Rectangle {
+    in property <string> text;
+    height: 26px;
+    width: t.preferred-width + 22px;
+    border-radius: 13px;
+    background: Theme.pill;
+    t := Text {
+        text: root.text;
+        color: white;
+        font-size: 13px;
+        font-weight: 600;
+    }
+}
+
+export component Toggle inherits Rectangle {
+    in-out property <bool> checked;
+    callback toggled(bool);
+    width: 38px;
+    height: 22px;
+    border-radius: 11px;
+    background: checked ? Theme.accent : Theme.dark ? #3A424D : #C9D0DA;
+    animate background { duration: 120ms; }
+    Rectangle {
+        x: checked ? parent.width - self.width - 3px : 3px;
+        y: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        background: white;
+        animate x { duration: 120ms; easing: ease-out; }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+/// Строка настройки. Высота по содержимому, длинные описания переносятся с нормальными отступами.
+export component SettingRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> hint;
+    in property <bool> has-toggle: true;
+    in property <color> title-color: Theme.ink;
+    in-out property <bool> checked;
+    callback toggled(bool);
+    callback clicked();
+    // явная ширина текста: иначе в прокрутке строки с переносом считаются за одну
+    in property <length> avail: min(400px, St.win-w);
+    property <length> text-w: root.avail - 20px - 18px - 22px - 18px - (root.has-toggle ? 38px + 18px : 0px) - 14px;
+    height: hl.preferred-height;
+    background: ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            if (root.has-toggle) {
+                root.checked = !root.checked;
+                root.toggled(root.checked);
+            } else {
+                root.clicked();
+            }
+        }
+    }
+    hl := HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 18px;
+        padding-top: root.hint == "" ? 13px : 11px;
+        padding-bottom: root.hint == "" ? 13px : 12px;
+        spacing: 18px;
+        VerticalLayout {
+            alignment: start;
+            padding-top: root.hint == "" ? 0px : 1px;
+            Image {
+                source: root.icon;
+                width: 22px;
+                height: 22px;
+                colorize: root.title-color == Theme.ink ? Theme.muted : root.title-color;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                color: root.title-color;
+                font-size: 14.5px;
+                font-weight: 500;
+                wrap: word-wrap;
+                width: root.text-w;
+            }
+            if root.hint != "": Text {
+                text: root.hint;
+                color: Theme.muted;
+                font-size: 12.5px;
+                wrap: word-wrap;
+                width: root.text-w;
+            }
+        }
+        if root.has-toggle: VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked <=> root.checked;
+                toggled(v) => { root.toggled(v); }
+            }
+        }
+    }
+}
+
+export component PrimaryButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> busy: false;
+    in property <bool> flat: false;
+    callback clicked();
+    height: 42px;
+    border-radius: 10px;
+    background: flat ? (ta.has-hover ? Theme.hover : transparent)
+        : !enabled ? Theme.faint : ta.pressed ? Theme.accent.darker(0.15) : ta.has-hover ? Theme.accent.brighter(0.08) : Theme.accent;
+    Text {
+        text: root.busy ? "Подождите…" : root.text;
+        color: root.flat ? Theme.accent : Theme.on-accent;
+        font-size: 14.5px;
+        font-weight: 600;
+    }
+    ta := TouchArea {
+        enabled: root.enabled && !root.busy;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component LinkText inherits Text {
+    callback clicked();
+    color: Theme.accent;
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// Пункт меню в духе Telegram Desktop: иконка и текст.
+export component MenuItem inherits Rectangle {
+    in property <image> icon;
+    in property <string> text;
+    in property <bool> danger;
+    in property <bool> arrow;
+    callback activated();
+    height: 34px;
+    min-width: 200px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 14px;
+        Image {
+            source: root.icon;
+            width: 20px;
+            colorize: root.danger ? Theme.danger : Theme.muted;
+        }
+        Text {
+            text: root.text;
+            color: root.danger ? Theme.danger : Theme.ink;
+            font-size: 14px;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        if root.arrow: Image {
+            source: @image-url("icons/chevron_right.svg");
+            width: 18px;
+            colorize: Theme.faint;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.activated(); }
+    }
+}
+
+export component MenuSep inherits Rectangle {
+    height: 9px;
+    Rectangle {
+        height: 1px;
+        background: Theme.line;
+    }
+}
+
+/// Карточка меню: появляется из угла, где был клик (лёгкое увеличение и проявление).
+export component MenuCard inherits Rectangle {
+    in property <bool> from-right;
+    in property <bool> from-bottom;
+    property <bool> shown;
+    background: Theme.panel;
+    border-radius: 10px;
+    drop-shadow-blur: 14px;
+    drop-shadow-offset-y: 3px;
+    drop-shadow-color: Theme.dark ? #00000090 : #0A1E3C33;
+    border-width: Theme.dark ? 1px : 0px;
+    border-color: Theme.line;
+    opacity: shown ? 1 : 0;
+    transform-scale: shown ? 1 : 0.9;
+    transform-origin: { x: root.from-right ? root.width : 0px, y: root.from-bottom ? root.height : 0px };
+    animate opacity { duration: 110ms; easing: ease-out; }
+    animate transform-scale { duration: 170ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+}
+
+/// Плавное появление для окон поверх (диалоги, карточки, настройки).
+export component Appear inherits Rectangle {
+    in property <length> rise: 10px;
+    property <bool> shown;
+    opacity: shown ? 1 : 0;
+    transform-scale: shown ? 1 : 0.97;
+    animate opacity { duration: 140ms; easing: ease-out; }
+    animate transform-scale { duration: 180ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+}
+
+/// Тонкая полоса окна: только кнопки свернуть / развернуть / закрыть, тянется мышью.
+export component TitleBar inherits Rectangle {
+    in property <bool> overlay;
+    height: 26px;
+    background: overlay ? transparent : Theme.title;
+    drag := TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                Api.win-drag();
+            }
+        }
+        double-clicked => { Api.win-max(); }
+    }
+    HorizontalLayout {
+        alignment: end;
+        for b[i] in [0, 1, 2]: Rectangle {
+            width: 40px;
+            background: bta.has-hover ? (i == 2 ? #E81123 : Theme.hover) : transparent;
+            Image {
+                source: i == 0 ? @image-url("icons/minimize.svg") : i == 1 ? (St.maximized ? @image-url("icons/filter_none.svg") : @image-url("icons/crop_square.svg")) : @image-url("icons/close.svg");
+                width: i == 1 ? 13px : 16px;
+                colorize: bta.has-hover && i == 2 ? white : Theme.muted;
+            }
+            bta := TouchArea {
+                clicked => {
+                    if (i == 0) { Api.win-min(); }
+                    if (i == 1) { Api.win-max(); }
+                    if (i == 2) { Api.win-close(); }
+                }
+            }
+        }
+    }
+}
+
+/// Затемнение под всплывающими окнами; клик мимо закрывает.
+export component Dim inherits Rectangle {
+    callback dismiss();
+    property <bool> shown;
+    background: shown ? #00000066 : #00000000;
+    animate background { duration: 160ms; easing: ease-out; }
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    TouchArea {
+        clicked => { root.dismiss(); }
+    }
+}
+
+/// Метка цели обучения: пока шаг про эту цель, сообщает, где она на экране.
+export component TourMark inherits Rectangle {
+    in property <string> tid;
+    Timer {
+        interval: 100ms;
+        running: St.tour != "" && St.tour-target == root.tid;
+        triggered => {
+            St.tour-x = root.absolute-position.x;
+            St.tour-y = root.absolute-position.y;
+            St.tour-w = root.width;
+            St.tour-h = root.height;
+            St.tour-seen = root.tid;
+        }
+    }
+}

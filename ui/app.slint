@@ -1,0 +1,281 @@
+import { Palette } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan } from "types.slint";
+import { DealsPane } from "deals.slint";
+import { MiniBrowser, MiniBar } from "mini.slint";
+import { TitleBar } from "widgets.slint";
+import { Rail, ChatListPane, FolderDialog } from "chatlist.slint";
+import { ChatPane, EmptyChat } from "chatview.slint";
+import { LoginView, SettingsView, ImageViewer, UserCard, ProfilePane, OrderPane, BrowserBar, SendBox, DescDialog } from "screens.slint";
+import { TemplatesDialog } from "templates.slint";
+import { EpicDialog, NotesDialog } from "extras.slint";
+import { NotifyWindow } from "notify.slint";
+import { Tour } from "tour.slint";
+import "../assets/fonts/Onest-Regular.ttf";
+import "../assets/fonts/Onest-Medium.ttf";
+import "../assets/fonts/Onest-SemiBold.ttf";
+import "../assets/fonts/Onest-Bold.ttf";
+
+export { Theme, St, Api, ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan, NotifyWindow }
+
+component Edge inherits TouchArea {
+    in property <int> dir;
+    pointer-event(e) => {
+        if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+            Api.win-resize(root.dir);
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    in-out property <string> win-title: "FunPay Tools";
+    title: win-title;
+    icon: @image-url("icons/logo64.png");
+    no-frame: true;
+    min-width: 240px;
+    min-height: 170px;
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    default-font-family: "Onest";
+    default-font-size: 14px;
+    background: Theme.panel;
+    always-on-top: St.on-top;
+
+    property <length> top: 26px;
+    property <bool> wide: root.width >= 900px;
+    property <bool> two: root.width >= 600px;
+    property <length> rail-w: wide ? 72px : 0px;
+    property <length> list-w: two ? max(250px, min(380px, (root.width - rail-w) * 0.34)) : root.width;
+    property <length> right-x: two ? rail-w + list-w + 1px : 0px;
+    property <length> right-w: two ? root.width - rail-w - list-w - 1px : root.width;
+    property <bool> compact: root.height < 330px;
+    property <bool> show-right: two || St.chat-open || St.pane != 0;
+
+    // мини-окно браузера и свёрнутая плашка вкладок
+    property <bool> bar: St.logged-in && St.mini-open && St.mini-collapsed;
+    property <length> body-h: root.height - top;
+    property <length> content-h: body-h - (bar ? 52px : 0px);
+    property <length> mini-w: St.mini-big ? right-w - 24px : max(min(260px, right-w - 8px), min(560px, right-w - 32px));
+    property <length> mini-h: St.mini-big ? body-h - 24px : max(min(220px, body-h - 8px), min(760px, body-h - 40px));
+    property <length> mini-x: St.mini-big ? right-x + (right-w - mini-w) / 2 : max(0px, min(root.width - mini-w, right-x + (right-w - mini-w) / 2 + St.mini-dx));
+    property <length> mini-y: St.mini-big ? (body-h - mini-h) / 2 : max(0px, min(body-h - 44px, (body-h - mini-h) / 2 + St.mini-dy));
+
+    // где лежит окно встроенного браузера (его рисует система поверх нашего окна)
+    out property <length> browser-x: St.browser-login ? 0px : mini-x;
+    out property <length> browser-y: St.browser-login ? top + 44px : top + mini-y + 44px;
+    out property <length> browser-w: St.browser-login ? root.width : mini-w;
+    out property <length> browser-h: St.browser-login ? root.height - top - 44px : mini-h - 44px;
+    out property <bool> overlay-open: St.settings-open || St.card-open || St.viewer-open || St.sendbox-open || St.folder-dialog-open || St.od-dialog != 0 || St.desc-open || St.tpl-open || St.epic-open || St.notes-open;
+
+    property <length> wh: root.height;
+    changed wh => { St.win-h = self.wh; }
+    property <length> ww: root.width;
+    changed ww => { St.win-w = self.ww; }
+    property <bool> is-dark: Theme.dark;
+    changed is-dark => {
+        Palette.color-scheme = self.is-dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    init => {
+        St.win-h = root.height;
+        St.win-w = root.width;
+        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+
+    public function scroll-bottom() { chat.scroll-bottom(); }
+    public function begin-prepend() { chat.begin-prepend(); }
+    public function focus-input() { chat.focus-input(); }
+
+    FocusScope {
+        key-pressed(e) => {
+            if (St.viewer-open && e.text == Key.LeftArrow) { Api.viewer-step(-1); return accept; }
+            if (St.viewer-open && e.text == Key.RightArrow) { Api.viewer-step(1); return accept; }
+            if (e.text == Key.Escape) {
+                if (St.viewer-open) {
+                    St.viewer-open = false;
+                } else if (St.sendbox-open) {
+                    Api.sendbox-cancel();
+                } else if (St.card-open) {
+                    St.card-open = false;
+                } else if (St.tpl-open) {
+                    St.tpl-open = false;
+                    St.tpl-editing = false;
+                    St.auto-editing = false;
+                } else if (St.epic-open) {
+                    St.epic-open = false;
+                } else if (St.notes-open) {
+                    St.notes-open = false;
+                } else if (St.settings-open) {
+                    St.settings-open = false;
+                } else if (St.stickers-open) {
+                    St.stickers-open = false;
+                } else if (St.mini-open && !St.mini-collapsed) {
+                    Api.mini-collapse(true);
+                } else if (St.pane != 0) {
+                    Api.pane-back();
+                } else if (St.chat-open) {
+                    Api.close-chat();
+                }
+                return accept;
+            }
+            return reject;
+        }
+
+        Rectangle {
+            y: root.top;
+            height: root.height - root.top;
+
+            if St.logged-in && wide: Rail {
+                x: 0;
+                width: rail-w;
+                height: parent.height;
+            }
+            if St.logged-in && (two || !root.show-right): ChatListPane {
+                x: rail-w;
+                width: list-w;
+                height: parent.height;
+                compact-folders: !wide;
+                show-menu: !wide;
+            }
+            if St.logged-in && two: Rectangle {
+                x: rail-w + list-w;
+                width: 1px;
+                height: parent.height;
+                background: Theme.line;
+            }
+            chat := ChatPane {
+                visible: St.logged-in && St.chat-open && St.pane == 0 && root.show-right;
+                x: root.right-x;
+                y: 0;
+                width: root.right-w;
+                height: root.content-h;
+                show-back: !two;
+                compact: root.compact;
+            }
+            if St.logged-in && two && !St.chat-open && St.pane == 0: EmptyChat {
+                x: root.right-x;
+                y: 0;
+                width: root.right-w;
+                height: root.content-h;
+            }
+            if St.logged-in && St.pane == 1: ProfilePane {
+                x: root.right-x;
+                y: 0;
+                width: root.right-w;
+                height: root.content-h;
+            }
+            if St.logged-in && St.pane == 2: OrderPane {
+                x: root.right-x;
+                y: 0;
+                width: root.right-w;
+                height: root.content-h;
+            }
+            if St.logged-in && St.pane == 4: DealsPane {
+                x: root.right-x;
+                y: 0;
+                width: root.right-w;
+                height: root.content-h;
+            }
+            if St.logged-in && St.pane == 3: Rectangle {
+                x: root.right-x;
+                width: root.right-w;
+                height: parent.height;
+                background: Theme.panel;
+                BrowserBar {
+                    y: 0;
+                    width: parent.width;
+                }
+                Text {
+                    y: 70px;
+                    text: St.browser-loading ? "Загружаю…" : "";
+                    color: Theme.muted;
+                    font-size: 13px;
+                }
+            }
+            if bar: MiniBar {
+                x: root.right-x;
+                y: root.content-h;
+                width: root.right-w;
+                height: 52px;
+            }
+            if St.logged-in && St.mini-open && !St.mini-collapsed: MiniBrowser {
+                x: root.mini-x;
+                y: root.mini-y;
+                width: root.mini-w;
+                height: root.mini-h;
+            }
+            if !St.logged-in: LoginView {
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
+        TitleBar {
+            y: 0;
+            width: root.width;
+        }
+
+        if St.folder-dialog-open: FolderDialog { width: parent.width; height: parent.height; }
+        if St.settings-open && St.logged-in: SettingsView { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.card-open: UserCard { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.sendbox-open: SendBox { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.desc-open: DescDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.tpl-open: TemplatesDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.epic-open: EpicDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.notes-open: NotesDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.viewer-open: ImageViewer { y: root.top; width: parent.width; height: parent.height - root.top; }
+        // подсказка над кнопкой (шаблоны, отправка)
+        if St.tip != "": Rectangle {
+            property <length> w: min(320px, tipt.preferred-width + 22px);
+            x: max(6px, min(root.width - self.w - 6px, St.tip-x - (St.tip-x > root.width - 340px ? self.w : 0px)));
+            y: max(30px, St.tip-y - self.height - 6px);
+            width: self.w;
+            height: tipt.preferred-height + 14px;
+            border-radius: 8px;
+            background: #1E2633F0;
+            drop-shadow-blur: 8px;
+            drop-shadow-color: #00000040;
+            tipt := Text {
+                x: 11px;
+                width: parent.width - 22px;
+                text: St.tip;
+                color: white;
+                font-size: 12.5px;
+                wrap: word-wrap;
+                max-lines: 6;
+                overflow: elide;
+            }
+        }
+        if St.toast != "": Rectangle {
+            y: parent.height - 70px;
+            x: (parent.width - self.width) / 2;
+            height: 34px;
+            width: min(parent.width - 20px, tt.preferred-width + 28px);
+            border-radius: 17px;
+            background: #1E2633e8;
+            tt := Text {
+                text: St.toast;
+                color: white;
+                font-size: 13px;
+                overflow: elide;
+                width: parent.width - 28px;
+                horizontal-alignment: center;
+            }
+        }
+
+        if St.tour != "" && !St.browser-login: Tour { y: root.top; width: parent.width; height: parent.height - root.top; }
+
+        // тонкая рамка окна (без системной тени)
+        if !St.maximized: Rectangle { border-width: 1px; border-color: Theme.dark ? #FFFFFF26 : #00000033; }
+
+        // края окна для изменения размера
+        if !St.maximized: Edge { dir: 0; x: 8px; y: 0; width: parent.width - 16px; height: 4px; mouse-cursor: ns-resize; }
+        if !St.maximized: Edge { dir: 1; x: 8px; y: parent.height - 5px; width: parent.width - 16px; height: 5px; mouse-cursor: ns-resize; }
+        if !St.maximized: Edge { dir: 2; x: parent.width - 5px; y: 8px; width: 5px; height: parent.height - 16px; mouse-cursor: ew-resize; }
+        if !St.maximized: Edge { dir: 3; x: 0; y: 8px; width: 5px; height: parent.height - 16px; mouse-cursor: ew-resize; }
+        if !St.maximized: Edge { dir: 4; x: parent.width - 8px; y: 0; width: 8px; height: 8px; mouse-cursor: nesw-resize; }
+        if !St.maximized: Edge { dir: 5; x: 0; y: 0; width: 8px; height: 8px; mouse-cursor: nwse-resize; }
+        if !St.maximized: Edge { dir: 6; x: parent.width - 8px; y: parent.height - 8px; width: 8px; height: 8px; mouse-cursor: nwse-resize; }
+        if !St.maximized: Edge { dir: 7; x: 0; y: parent.height - 8px; width: 8px; height: 8px; mouse-cursor: nesw-resize; }
+    }
+}

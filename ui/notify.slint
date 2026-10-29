@@ -1,0 +1,106 @@
+// Своё всплывающее уведомление: отдельное маленькое окно в углу экрана.
+
+export component NotifyWindow inherits Window {
+    in property <string> head;
+    in property <string> body;
+    in property <image> avatar;
+    in property <bool> has-avatar;
+    in property <string> letter;
+    in property <color> c1: #72C6FF;
+    in property <color> c2: #3A86E0;
+    in property <bool> show-icon: true;
+    in property <bool> show-name: true;
+    in property <bool> show-text: true;
+    in property <bool> dark;
+    in property <color> accent: #3A7FD5;
+    callback clicked();
+    callback closed();
+    out property <bool> hovered: ta.has-hover;
+
+    property <color> bg: dark ? #1B2027 : #FFFFFF;
+    property <color> ink: dark ? #F2F4F7 : #0E1116;
+    property <color> muted: dark ? #96A0AD : #66707F;
+    property <color> line: dark ? #2B323C : #E1E6EC;
+    title: "FunPay Tools";
+    no-frame: true;
+    always-on-top: true;
+    width: 340px;
+    height: 78px;
+    background: bg;
+    default-font-family: "Onest";
+
+    Rectangle { border-width: 1px; border-color: root.line; }
+    // полоска акцента слева
+    Rectangle { x: 0; width: 3px; background: root.accent; }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 10px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 46px;
+                height: 46px;
+                border-radius: 23px;
+                clip: true;
+                background: @linear-gradient(180deg, root.c1 0%, root.c2 100%);
+                if !root.has-avatar: Text { text: root.letter; color: white; font-size: 19px; font-weight: 600; }
+                if root.has-avatar: Image { source: root.avatar; width: 46px; height: 46px; image-fit: cover; }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: root.show-name ? root.head : "Новое сообщение";
+                    color: root.ink;
+                    font-size: 14.5px;
+                    font-weight: 650;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+            Text {
+                text: root.show-text ? root.body : "Откройте, чтобы прочитать";
+                color: root.muted;
+                font-size: 13px;
+                wrap: word-wrap;
+                max-lines: 2;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: start;
+            spacing: 6px;
+            width: 22px;
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                border-radius: 11px;
+                background: xa.has-hover ? (root.dark ? #FFFFFF18 : #0000000F) : transparent;
+                opacity: ta.has-hover || xa.has-hover ? 1 : 0;
+                Image { source: @image-url("icons/close.svg"); width: 14px; colorize: root.muted; }
+                xa := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.closed(); }
+                }
+            }
+            if root.show-icon: Image {
+                source: @image-url("icons/funpay_arrows.svg");
+                width: 20px;
+                height: 20px;
+                colorize: root.accent;
+            }
+        }
+    }
+}

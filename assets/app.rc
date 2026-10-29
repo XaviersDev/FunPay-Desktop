@@ -1,0 +1,22 @@
+1 ICON "icon.ico"
+1 VERSIONINFO
+FILEVERSION 4,3,9,0
+PRODUCTVERSION 4,3,9,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041904B0"
+    BEGIN
+      VALUE "CompanyName", "XaviersDev"
+      VALUE "FileDescription", "FunPay Tools"
+      VALUE "FileVersion", "4.3.9"
+      VALUE "ProductName", "FunPay Tools"
+      VALUE "ProductVersion", "4.3.9"
+      VALUE "OriginalFilename", "FunPayTools.exe"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x419, 1200
+  END
+END

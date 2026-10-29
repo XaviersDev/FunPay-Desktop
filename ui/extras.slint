@@ -1,0 +1,275 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { IconButton, Toggle, PrimaryButton, Dim } from "widgets.slint";
+import { EpicNick } from "epic.slint";
+
+component Card inherits Rectangle {
+    in property <length> w: 420px;
+    callback close();
+    property <bool> shown;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim {
+        dismiss => { root.close(); }
+    }
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.95;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: min(root.w, root.width - 24px);
+        height: min(root.height - 24px, body.preferred-height);
+        border-radius: 14px;
+        background: Theme.panel;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: Theme.shadow;
+        clip: true;
+        TouchArea { }
+        body := VerticalLayout {
+            @children
+        }
+    }
+}
+
+component Row inherits Rectangle {
+    in property <string> title;
+    in property <string> hint;
+    in-out property <bool> checked;
+    in property <length> tw: 280px;
+    callback toggled(bool);
+    height: rl.preferred-height;
+    rl := HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text { text: root.title; color: Theme.ink; font-size: 14px; width: root.tw; wrap: word-wrap; }
+            if root.hint != "": Text { text: root.hint; color: Theme.muted; font-size: 12px; width: root.tw; wrap: word-wrap; }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle { checked <=> root.checked; toggled(v) => { root.toggled(v); } }
+        }
+    }
+}
+
+// «Сделать ник цветным»: коротко, с живыми примерами и кнопкой к боту
+export component EpicDialog inherits Card {
+    w: 380px;
+    close => { St.epic-open = false; }
+    Rectangle {
+        height: 48px;
+        HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 8px;
+            Text { text: "Цветной ник"; color: Theme.ink; font-size: 17px; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; }
+            VerticalLayout {
+                alignment: center;
+                IconButton { icon: @image-url("icons/close.svg"); clicked => { St.epic-open = false; } }
+            }
+        }
+    }
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        Text {
+            text: "Градиент, свечение и анимация. Ник видят все, у кого FunPay Tools: в приложении, расширении и здесь.";
+            color: Theme.muted;
+            font-size: 13px;
+            wrap: word-wrap;
+            width: min(380px, St.win-w - 24px) - 40px;
+        }
+        Rectangle {
+            border-radius: 12px;
+            background: Theme.field;
+            height: ex.preferred-height;
+            ex := VerticalLayout {
+                padding: 14px;
+                spacing: 11px;
+                for n[i] in St.epic-examples: HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle {
+                        width: 26px;
+                        height: 26px;
+                        border-radius: 13px;
+                        background: @linear-gradient(135deg, n.c1 0%, n.c2 100%);
+                    }
+                    EpicNick {
+                        text: i < St.epic-names.length ? St.epic-names[i] : "";
+                        nick: n;
+                        font-size: 15px;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+        }
+        PrimaryButton {
+            text: "Получить уникальный ник";
+            clicked => { Api.epic-get(); }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            Text { text: "Анимация ников"; color: Theme.ink; font-size: 13.5px; vertical-alignment: center; horizontal-stretch: 1; }
+            Toggle { checked: St.epic-anim; toggled(v) => { St.epic-anim = v; Api.set-epic-anim(v); } }
+        }
+        Rectangle { height: 8px; }
+    }
+}
+
+// настройки своих уведомлений: угол экрана, сколько сразу, что показывать
+export component NotesDialog inherits Card {
+    w: 420px;
+    close => { St.notes-open = false; }
+    property <length> tw: min(420px, St.win-w - 24px) - 40px - 50px;
+    Rectangle {
+        height: 48px;
+        HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 8px;
+            Text { text: "Всплывающие уведомления"; color: Theme.ink; font-size: 17px; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; }
+            VerticalLayout {
+                alignment: center;
+                IconButton { icon: @image-url("icons/close.svg"); clicked => { St.notes-open = false; } }
+            }
+        }
+    }
+    ScrollView {
+        content-width: self.visible-width;
+        preferred-height: inner.preferred-height;
+        inner := VerticalLayout {
+            padding-bottom: 14px;
+            Row {
+                tw: root.tw;
+                title: "Свои окна уведомлений";
+                hint: "Аккуратные карточки в углу экрана. Если выключить, будут обычные уведомления Windows.";
+                checked: St.pop-custom;
+                toggled(v) => { St.pop-custom = v; Api.pop-set("custom", v ? 1 : 0); }
+            }
+            if St.pop-custom: VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 6px;
+                spacing: 8px;
+                Text { text: "Где показывать"; color: Theme.muted; font-size: 12px; font-weight: 600; }
+                HorizontalLayout {
+                    alignment: center;
+                    // маленький экран: клик по углу
+                    Rectangle {
+                        width: 200px;
+                        height: 124px;
+                        border-radius: 10px;
+                        background: Theme.field;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        Rectangle { y: parent.height - 12px; height: 12px; border-radius: 0; background: Theme.line; }
+                        for c in [0, 1, 2, 3]: Rectangle {
+                            property <bool> on: St.pop-corner == c;
+                            x: c == 0 || c == 2 ? 8px : parent.width - self.width - 8px;
+                            y: c < 2 ? 8px : parent.height - self.height - 18px;
+                            width: 58px;
+                            height: 34px;
+                            border-radius: 6px;
+                            background: self.on ? Theme.accent : ca.has-hover ? Theme.accent-soft : Theme.panel;
+                            border-width: self.on ? 0px : 1px;
+                            border-color: Theme.line;
+                            for k in [0, 1, 2]: Rectangle {
+                                visible: k < St.pop-count && St.pop-corner == c;
+                                x: 6px + k * 3px;
+                                y: c < 2 ? 5px + k * 8px : parent.height - 11px - k * 8px;
+                                width: parent.width - 12px - k * 6px;
+                                height: 6px;
+                                border-radius: 2px;
+                                background: #FFFFFF;
+                                opacity: 1 - k * 0.28;
+                            }
+                            ca := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { St.pop-corner = c; Api.pop-set("corner", c); }
+                            }
+                        }
+                    }
+                }
+                Text { text: "Сколько сразу"; color: Theme.muted; font-size: 12px; font-weight: 600; }
+                Rectangle {
+                    height: 32px;
+                    border-radius: 9px;
+                    background: Theme.field;
+                    HorizontalLayout {
+                        padding: 3px;
+                        spacing: 2px;
+                        for n in [1, 2, 3, 4, 5]: Rectangle {
+                            border-radius: 7px;
+                            background: St.pop-count == n ? Theme.panel : na.has-hover ? Theme.hover : transparent;
+                            drop-shadow-blur: St.pop-count == n ? 3px : 0px;
+                            drop-shadow-color: Theme.shadow;
+                            Text { text: n; color: St.pop-count == n ? Theme.ink : Theme.muted; font-size: 13px; font-weight: 600; }
+                            na := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { St.pop-count = n; Api.pop-set("count", n); }
+                            }
+                        }
+                    }
+                }
+            }
+            if St.pop-custom: Row { tw: root.tw; title: "Значок"; hint: "Стрелки FunPay в углу карточки"; checked: St.pop-icon; toggled(v) => { St.pop-icon = v; Api.pop-set("icon", v ? 1 : 0); } }
+            if St.pop-custom: Row { tw: root.tw; title: "Имя собеседника"; checked: St.pop-name; toggled(v) => { St.pop-name = v; Api.pop-set("name", v ? 1 : 0); } }
+            if St.pop-custom: Row { tw: root.tw; title: "Текст сообщения"; hint: "Выключите, если рядом бывают чужие глаза"; checked: St.pop-text; toggled(v) => { St.pop-text = v; Api.pop-set("text", v ? 1 : 0); } }
+            Row {
+                tw: root.tw;
+                title: "Показывать, когда окно открыто";
+                hint: "Кроме чата, который сейчас открыт";
+                checked: St.pop-focus;
+                toggled(v) => { St.pop-focus = v; Api.pop-set("focus", v ? 1 : 0); }
+            }
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 8px;
+                PrimaryButton {
+                    text: "Показать пример";
+                    flat: true;
+                    clicked => { Api.pop-test(); }
+                }
+            }
+        }
+    }
+}
+
+// контакты FunPay Tools: Telegram и Discord
+export component Contacts inherits HorizontalLayout {
+    alignment: center;
+    spacing: 10px;
+    padding-top: 10px;
+    padding-bottom: 6px;
+    for c in [{ id: "tg", t: "Telegram", col: #229ED9 }, { id: "ds", t: "Discord", col: #5865F2 }]: Rectangle {
+        height: 36px;
+        width: cl.preferred-width + 26px;
+        border-radius: 18px;
+        background: ca.has-hover ? c.col.with-alpha(0.22) : c.col.with-alpha(0.12);
+        animate background { duration: 100ms; }
+        cl := HorizontalLayout {
+            x: 13px;
+            spacing: 8px;
+            Image {
+                source: c.id == "tg" ? @image-url("icons/telegram.svg") : @image-url("icons/discord.svg");
+                width: 18px;
+                colorize: c.col;
+            }
+            Text { text: c.t; color: c.col; font-size: 13.5px; font-weight: 600; vertical-alignment: center; }
+        }
+        ca := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Api.open-contact(c.id); }
+        }
+    }
+}

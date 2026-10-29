@@ -1,0 +1,195 @@
+// Мини-окно встроенного браузера со вкладками (ссылки FunPay, когда уже вошли)
+// и свёрнутая плашка внизу, как в мобильном приложении.
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { BrowserTab } from "types.slint";
+import { IconButton } from "widgets.slint";
+
+component SiteIcon inherits Rectangle {
+    in property <length> size: 18px;
+    width: size;
+    height: size;
+    border-radius: 4px;
+    background: #2F80ED;
+    Text { text: "F"; color: white; font-size: root.size * 0.68; font-weight: 800; }
+}
+
+component TabChip inherits Rectangle {
+    in property <BrowserTab> tab;
+    in property <bool> on;
+    in property <int> index;
+    in property <length> max-w: 190px;
+    height: 32px;
+    width: min(root.max-w, row.preferred-width + 16px);
+    border-radius: 8px;
+    background: on ? Theme.hover : ta.has-hover ? Theme.hover.with-alpha(0.6) : transparent;
+    row := HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 6px;
+        spacing: 6px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            SiteIcon { }
+        }
+        Text {
+            text: tab.title;
+            color: on ? Theme.ink : Theme.muted;
+            font-size: 12.5px;
+            font-weight: on ? 600 : 500;
+            vertical-alignment: center;
+            overflow: elide;
+            max-width: root.max-w - 58px;
+        }
+        if ta.has-hover || on: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: xa.has-hover ? Theme.line : transparent;
+                Image { source: @image-url("icons/close_small.svg"); width: 14px; colorize: Theme.muted; }
+                xa := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Api.tab-close(root.index); }
+                }
+            }
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Api.tab-select(root.index); }
+    }
+}
+
+export component MiniBrowser inherits Rectangle {
+    // ширина полосы вкладок: окно минус кнопки по краям
+    property <length> strip-w: root.width - 222px;
+    property <bool> loading: St.tab-active >= 0 && St.tab-active < St.tabs.length && St.tabs[St.tab-active].loading;
+    border-radius: 12px;
+    background: Theme.panel;
+    drop-shadow-blur: 28px;
+    drop-shadow-color: Theme.shadow;
+    clip: true;
+    TouchArea { }
+    VerticalLayout {
+        Rectangle {
+            height: 44px;
+            background: Theme.title;
+            // окно можно таскать за шапку, двойной щелчок разворачивает
+            drag := TouchArea {
+                mouse-cursor: St.mini-big ? default : move;
+                moved => {
+                    if (!St.mini-big && self.pressed) {
+                        St.mini-dx += self.mouse-x - self.pressed-x;
+                        St.mini-dy += self.mouse-y - self.pressed-y;
+                        Api.mini-moved();
+                    }
+                }
+                double-clicked => {
+                    St.mini-big = !St.mini-big;
+                    Api.mini-moved();
+                }
+            }
+            HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 4px;
+                spacing: 2px;
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { size: 32px; icon-size: 18px; icon: @image-url("icons/close.svg"); clicked => { Api.browser-close(); } }
+                }
+                fl := Flickable {
+                    horizontal-stretch: 1;
+                    interactive: false;
+                    content-width: tabs.preferred-width;
+                    tabs := HorizontalLayout {
+                        alignment: start;
+                        padding-top: 6px;
+                        padding-bottom: 6px;
+                        spacing: 2px;
+                        for t[i] in St.tabs: TabChip {
+                            tab: t;
+                            on: i == St.tab-active;
+                            index: i;
+                            max-w: max(96px, min(200px, root.strip-w / max(1, St.tabs.length) - 2px));
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { size: 32px; icon-size: 18px; icon: @image-url("icons/arrow_back.svg"); clicked => { Api.browser-back(); } }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { size: 32px; icon-size: 18px; icon: @image-url("icons/refresh.svg"); clicked => { Api.browser-reload(); } }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { size: 32px; icon-size: 18px; icon: @image-url("icons/open_in_new.svg"); clicked => { Api.open-external(St.browser-url); } }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        size: 32px;
+                        icon-size: 17px;
+                        icon: St.mini-big ? @image-url("icons/filter_none.svg") : @image-url("icons/crop_square.svg");
+                        clicked => { St.mini-big = !St.mini-big; Api.mini-moved(); }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { size: 32px; icon-size: 20px; icon: @image-url("icons/keyboard_arrow_down.svg"); clicked => { Api.mini-collapse(true); } }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.panel;
+            Text { text: root.loading ? "Загружаю…" : ""; color: Theme.muted; font-size: 13px; }
+        }
+    }
+}
+
+// свёрнутые вкладки: плашка снизу, нажатие разворачивает
+export component MiniBar inherits Rectangle {
+    property <string> first: St.tab-active >= 0 && St.tab-active < St.tabs.length ? St.tabs[St.tab-active].title : St.tabs.length > 0 ? St.tabs[0].title : "";
+    background: Theme.title;
+    Rectangle { y: 0; height: 1px; background: Theme.line; }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Api.mini-collapse(false); }
+    }
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 8px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            IconButton { size: 34px; icon-size: 19px; icon: @image-url("icons/close.svg"); clicked => { Api.mini-close-all(); } }
+        }
+        VerticalLayout {
+            alignment: center;
+            SiteIcon { size: 24px; }
+        }
+        Text {
+            text: root.first + (St.tabs.length > 1 ? " и ещё " + (St.tabs.length - 1) : "");
+            color: Theme.ink;
+            font-size: 14px;
+            font-weight: 600;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                source: @image-url("icons/keyboard_arrow_down.svg");
+                width: 22px;
+                colorize: Theme.muted;
+                transform-rotation: 180deg;
+            }
+        }
+    }
+}
