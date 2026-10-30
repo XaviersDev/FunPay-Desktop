@@ -110,6 +110,12 @@ pub struct Ui {
 /// Состояние новых экранов: сделки, описания, мини-браузер.
 #[derive(Default)]
 pub struct Ext {
+    /// листы кадров анимированных картинок по ключу кэша
+    pub anims: HashMap<String, (Image, crate::anim::Info)>,
+    /// вход через браузер: ключи, которые уже проверили на этой странице, и идёт ли проверка
+    pub login_tried: Vec<String>,
+    pub login_checking: bool,
+    pub wall_gen: u64,
     pub deals_gen: u64,
     pub deals_tab: i32,
     pub deals_state: String,
@@ -131,6 +137,14 @@ pub struct Ext {
     pub tpl_image: String,
     /// сумма в заморозке (посчитана отдельно)
     pub frozen: String,
+    pub lots_gen: u64,
+    pub lots: Vec<crate::lots::MyLot>,
+    pub lots_query: String,
+    pub lots_filter: i32,
+    pub lot_lang: i32,
+    pub lot_gen: u64,
+    pub lot_form: Option<crate::lots::Form>,
+    pub catalog: Vec<crate::feat2::CatalogTheme>,
     /// обновление скачано и установлено: путь к новому exe
     pub upd_exe: Option<std::path::PathBuf>,
 }
@@ -1222,7 +1236,9 @@ impl Ui {
         for (i, u) in urls.iter().enumerate() {
             let (key, im) = self.img(u, THUMB);
             let g = geo[i];
-            tiles.push(Tile { has: im.is_some(), img: im.map(|x| x.0).unwrap_or_default(), x: g.x, y: g.y, w: g.w, h: g.h, url: u.clone().into(), key: key.into() });
+            let has = im.is_some();
+            let (img, anim) = self.tile_img(&key, im.map(|x| x.0));
+            tiles.push(Tile { has, img, anim, x: g.x, y: g.y, w: g.w, h: g.h, url: u.clone().into(), key: key.into() });
         }
         let n = tiles.len() as i32;
         self.st(|s| {
@@ -1349,9 +1365,12 @@ impl Ui {
                         let thumb = m.thumb.clone().or(m.image.clone()).unwrap_or_default();
                         let (key, im) = self.img(&thumb, THUMB);
                         let g = geo[k];
+                        let has = im.is_some();
+                        let (img, anim) = self.tile_img(&key, im.map(|x| x.0));
                         tiles.push(Tile {
-                            has: im.is_some(),
-                            img: im.map(|x| x.0).unwrap_or_default(),
+                            has,
+                            img,
+                            anim,
                             x: g.x,
                             y: g.y,
                             w: g.w,
@@ -1532,6 +1551,9 @@ impl Ui {
 
     pub fn image_ready(&mut self, key: String, img: Image, w: u32, h: u32) {
         self.imgs.insert(key.clone(), (img.clone(), w, h));
+        if !self.ext.catalog.is_empty() {
+            self.theme_preview_ready(&key);
+        }
         for i in 0..self.chats_model.row_count() {
             if let Some(mut r) = self.chats_model.row_data(i) {
                 if r.avatar_key == key.as_str() {
@@ -1553,7 +1575,9 @@ impl Ui {
                 for t in 0..tiles.row_count() {
                     if let Some(mut tile) = tiles.row_data(t) {
                         if tile.key == key.as_str() {
-                            tile.img = img.clone();
+                            let (ti, ta) = self.tile_img(&key, Some(img.clone()));
+                            tile.img = ti;
+                            tile.anim = ta;
                             tile.has = true;
                             tiles.set_row_data(t, tile);
                             if tiles.row_count() == 1 {
@@ -1603,9 +1627,11 @@ impl Ui {
         if !self.sendbox.is_empty() && key.starts_with(&format!("{THUMB}|file://")) {
             self.rebuild_sendbox();
         }
-        if !self.viewer_url.is_empty() && imgcache::key(FULL, &self.viewer_url) == key {
+        if !self.viewer_url.is_empty() && (imgcache::key(FULL, &self.viewer_url) == key || self.ext.anims.contains_key(&key) && key.ends_with(&format!("|{}", self.viewer_url))) {
+            let (vi, va) = self.viewer_anim(&self.viewer_url.clone()).unwrap_or((img.clone(), Default::default()));
             self.st(|s| {
-                s.set_viewer_img(img.clone());
+                s.set_viewer_img(vi);
+                s.set_viewer_anim(va);
                 s.set_viewer_has(true);
             });
         }
@@ -1636,14 +1662,16 @@ impl Ui {
         let count = self.viewer_list.len() as i32;
         let (_, im) = self.img(&url, FULL);
         let thumb = self.imgs.iter().find(|(k, _)| k.ends_with(&format!("|{url}"))).map(|(_, v)| v.0.clone());
+        let anim = self.viewer_anim(&url);
         self.st(|s| {
             s.set_viewer_url(url.clone().into());
             s.set_viewer_open(true);
             s.set_viewer_index(idx);
             s.set_viewer_count(count);
-            match im.map(|x| x.0).or(thumb) {
-                Some(i) => {
+            match anim.map(|(i, a)| (i, a)).or(im.map(|x| (x.0, Default::default()))).or(thumb.map(|t| (t, Default::default()))) {
+                Some((i, a)) => {
                     s.set_viewer_img(i);
+                    s.set_viewer_anim(a);
                     s.set_viewer_has(true);
                 }
                 None => s.set_viewer_has(false),
@@ -2120,6 +2148,10 @@ impl Ui {
             });
             if self.st(|s| s.get_browser_login()).unwrap_or(false) {
                 self.login_poll = 0;
+                // новая страница (например, после ввода кода): тот же ключ можно проверить ещё раз
+                if !loading {
+                    self.ext.login_tried.clear();
+                }
             }
             return;
         }
@@ -2202,9 +2234,14 @@ impl Ui {
             });
             return;
         }
-        match crate::browser::open(&app, "https://funpay.com/account/login", &[]) {
+        // старые куки из прошлого входа убираем, иначе их примут за новый вход
+        match crate::browser::open(&app, "about:blank", &[]) {
             Ok(()) => {
+                crate::browser::forget_funpay();
+                crate::browser::load_tab(0, "https://funpay.com/account/login");
                 self.login_poll = 0;
+                self.ext.login_tried.clear();
+                self.ext.login_checking = false;
                 self.st(|s| {
                     s.set_browser_login(true);
                     s.set_login_error("".into());
@@ -2230,16 +2267,32 @@ impl Ui {
         crate::browser::sync(&app, show);
         if login {
             self.login_poll += 1;
-            if self.login_poll % 6 == 0 {
+            // Ключ в куках ещё не значит, что вход завершён: при входе с кодом FunPay может выдать его раньше.
+            // Поэтому окно не закрываем, а тихо проверяем ключ. Закроется само, когда FunPay его примет.
+            if self.login_poll % 6 == 0 && !st.get_browser_loading() && !self.ext.login_checking && !st.get_login_busy() {
+                if crate::browser::user_agent().is_empty() {
+                    crate::browser::request_ua();
+                }
                 let cookies = crate::browser::funpay_cookies();
                 let gk = cookies.iter().find(|(k, _)| k == "golden_key").map(|(_, v)| v.clone()).unwrap_or_default();
-                if !gk.is_empty() && !st.get_login_busy() {
-                    st.set_login_busy(true);
-                    st.set_browser_login(false);
-                    crate::browser::close_tab(0);
-                    self.send(Cmd::LoginCookies(cookies));
+                if !gk.is_empty() && !self.ext.login_tried.contains(&gk) {
+                    self.ext.login_tried.push(gk);
+                    self.ext.login_checking = true;
+                    self.send(Cmd::LoginCookies { cookies, ua: crate::browser::user_agent() });
                 }
             }
+        }
+    }
+
+    /// Итог проверки ключа из браузера входа.
+    pub fn login_browser_done(&mut self, ok: bool, err: String) {
+        self.ext.login_checking = false;
+        if ok {
+            self.st(|s| s.set_browser_login(false));
+            crate::browser::close_tab(0);
+        } else if !err.is_empty() {
+            // человек ещё входит (например, вводит код): ждём дальше, окно не трогаем
+            crate::log::write(&format!("вход через браузер: ключ пока не принят: {err}"));
         }
     }
 
@@ -2708,19 +2761,7 @@ impl Ui {
         set!("shadow", set_c_shadow);
         set!("wall1", set_c_wall1);
         set!("wall2", set_c_wall2);
-        let wall = if t.wall.is_empty() {
-            None
-        } else {
-            std::fs::read(&t.wall).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|img| {
-                let img = if img.width().max(img.height()) > 2560 { img.resize(2560, 2560, image::imageops::FilterType::Triangle) } else { img };
-                let rgba = img.to_rgba8();
-                let (w, h) = (rgba.width(), rgba.height());
-                Image::from_rgba8(slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), w, h))
-            })
-        };
-        th.set_c_has_wall_img(wall.is_some());
-        th.set_c_wall_tiled(t.wall_tiled);
-        th.set_c_wall_img(wall.unwrap_or_default());
+        self.apply_wall(t);
         th.set_dark(t.dark);
         th.set_custom(true);
         self.ext.tg_applied = true;
@@ -2732,8 +2773,8 @@ impl Ui {
     /// Окно выбора файла темы и применение.
     pub fn import_theme(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .set_title("Тема Telegram")
-            .add_filter("Тема Telegram", &["tdesktop-theme", "tdesktop-palette", "attheme"])
+            .set_title("Файл темы")
+            .add_filter("Темы", &["fptheme", "tdesktop-theme", "tdesktop-palette", "attheme"])
             .add_filter("Все файлы", &["*"])
             .pick_file()
         else {
@@ -2750,26 +2791,7 @@ impl Ui {
                 return;
             }
         };
-        let mut wall_path = String::new();
-        let mut tiled = false;
-        if let Some((bytes, ext, t)) = loaded.wall {
-            let p = crate::config::dir().join(format!("tg_wall.{ext}"));
-            for old in ["jpg", "jpeg", "png"] {
-                let _ = std::fs::remove_file(crate::config::dir().join(format!("tg_wall.{old}")));
-            }
-            if std::fs::write(&p, bytes).is_ok() {
-                wall_path = p.to_string_lossy().to_string();
-                tiled = t;
-            }
-        }
-        let theme = crate::config::TgTheme { name: loaded.name, dark: loaded.dark, colors: loaded.colors, wall: wall_path, wall_tiled: tiled };
-        {
-            let mut c = self.cfg.lock().unwrap();
-            c.tg_theme = Some(theme.clone());
-            c.save();
-        }
-        self.apply_tg(&theme);
-        self.toast("Тема применена");
+        self.apply_loaded(loaded);
     }
 
     pub fn reset_theme(&mut self) {

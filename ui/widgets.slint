@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { Anim } from "types.slint";
 import { Api, St } from "globals.slint";
 
 export component IconButton inherits Rectangle {
@@ -373,4 +374,15 @@ export component TourMark inherits Rectangle {
             St.tour-seen = root.tid;
         }
     }
+}
+
+// картинка с анимацией: показывает кадр из листа, сам переключая кадры
+export component AnimImage inherits Image {
+    in property <Anim> anim;
+    property <bool> on: anim.frames > 1 && anim.cols > 0;
+    property <int> f: on ? mod(floor(animation-tick() / 1ms / max(20, anim.delay)), anim.frames) : 0;
+    source-clip-x: on ? mod(f, anim.cols) * anim.fw : 0;
+    source-clip-y: on ? floor(f / anim.cols) * anim.fh : 0;
+    source-clip-width: on ? anim.fw : self.source.width;
+    source-clip-height: on ? anim.fh : self.source.height;
 }

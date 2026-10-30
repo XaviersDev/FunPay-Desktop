@@ -5,6 +5,34 @@ use crate::ui::{with_ui, Me, OpenedChat, THUMB};
 use chrono::NaiveDate;
 use slint::{Image, Rgba8Pixel, SharedPixelBuffer};
 
+pub fn demo_gif(w: u16, h: u16, n: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut e = gif::Encoder::new(&mut out, w, h, &[]).unwrap();
+        e.set_repeat(gif::Repeat::Infinite).unwrap();
+        for i in 0..n {
+            let a = i as f32 / n as f32 * std::f32::consts::TAU;
+            let (cx, cy) = (w as f32 / 2.0 + a.cos() * w as f32 * 0.28, h as f32 / 2.0 + a.sin() * h as f32 * 0.28);
+            let mut px = Vec::with_capacity(w as usize * h as usize * 4);
+            for y in 0..h {
+                for x in 0..w {
+                    let d = ((x as f32 - cx).powi(2) + (y as f32 - cy).powi(2)).sqrt();
+                    if d < w as f32 * 0.12 {
+                        px.extend_from_slice(&[255, 214, 92, 255]);
+                    } else {
+                        let t = y as f32 / h as f32;
+                        px.extend_from_slice(&[(60.0 + 40.0 * t) as u8, (90.0 + 30.0 * t) as u8, (200.0 - 60.0 * t) as u8, 255]);
+                    }
+                }
+            }
+            let mut f = gif::Frame::from_rgba_speed(w, h, &mut px, 20);
+            f.delay = 6;
+            e.write_frame(&f).unwrap();
+        }
+    }
+    out
+}
+
 fn pic(w: u32, h: u32, a: [u8; 3], b: [u8; 3]) -> Image {
     let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(w, h);
     let px = buf.make_mut_slice();
@@ -102,6 +130,10 @@ pub fn fill(scene: &str) {
         for (i, url) in urls.iter().enumerate() {
             let (w, h) = if i == 0 { (640, 400) } else { (400, 400) };
             u.imgs.insert(crate::imgcache::key(THUMB, url), (pic(w, h, colors[i].0, colors[i].1), w, h));
+        }
+        // последняя картинка гифкой: шарик бегает по кругу
+        if let Some(sh) = crate::anim::sheet(&demo_gif(400, 400, 16), 560, 6_000_000, &|i| i) {
+            u.anim_ready(&crate::imgcache::key(THUMB, "demo://4"), Image::from_rgba8(sh.buf), sh.info);
         }
         if scene == "list" {
             return;
@@ -211,6 +243,71 @@ pub fn scene(name: &str) {
             );
         }
         "card" => u.open_card(),
+        "lots" | "loteditor" => {
+            u.open_lots();
+            let l = |id: &str, title: &str, cat: &str, price: &str, amount: &str, server: &str, active: bool, auto: bool| crate::lots::MyLot {
+                id: id.into(),
+                title: title.into(),
+                node: "1".into(),
+                category: cat.into(),
+                price: price.into(),
+                amount: amount.into(),
+                server: server.into(),
+                active,
+                auto,
+            };
+            let gen = u.ext.lots_gen;
+            u.lots_loaded(
+                gen,
+                Ok(vec![
+                    l("1", "Steam-ключ Hollow Knight, активация в любом регионе", "Hollow Knight, Ключи", "349 ₽", "12", "", true, true),
+                    l("2", "Hades II, ключ Steam", "Hollow Knight, Ключи", "850.001426 ₽", "3", "", true, true),
+                    l("6", "Silksong, предзаказ, ключ Steam", "Hollow Knight, Ключи", "1219.226069 ₽", "", "", true, false),
+                    l("3", "Буст MMR, Solo, 4000-4500 (цена за одну победу)", "Dota 2, Буст", "150.1222 ₽", "", "Европа", true, false),
+                    l("4", "Калибровка аккаунта, 10 игр", "Dota 2, Буст", "1 190 ₽", "", "Европа", false, false),
+                    l("7", "Arcane Fragment, моментальная передача", "Standoff 2, Голда", "61.955193 ₽", "65", "", true, true),
+                    l("8", "1000 голды, вывод через рынок", "Standoff 2, Голда", "219.226069 ₽", "8", "", true, false),
+                    l("5", "Подписка Premium на 1 месяц", "Spotify, Premium", "164.419552 ₽", "40", "", true, true),
+                ]),
+            );
+            if name == "loteditor" {
+                u.lot_edit("1".into());
+                let gen = u.ext.lot_gen;
+                let html = r#"<form class="form-offer-editor" data-offer='{"amount":12}'>
+<input type="hidden" name="csrf_token" value="t"><input type="hidden" name="offer_id" value="1"><input type="hidden" name="node_id" value="1">
+<div class="form-group lot-field" data-id="type"><label class="control-label">Тип товара</label><select name="fields[type]"><option value="">Выберите</option><option value="key" selected>Ключ</option><option value="gift">Гифт</option></select></div>
+<div class="form-group" data-locale="ru"><label class="control-label">Краткое описание</label><input type="text" name="fields[summary][ru]" value="Steam-ключ Hollow Knight, активация в любом регионе"></div>
+<div class="form-group" data-locale="en"><label class="control-label">Краткое описание</label><input type="text" name="fields[summary][en]" value="Hollow Knight Steam key, region free"></div>
+<div class="form-group" data-locale="ru"><label class="control-label">Подробное описание</label><textarea name="fields[desc][ru]">Ключ приходит сразу после оплаты.
+Активация: Steam, Игры, Активировать продукт.</textarea></div>
+<div class="form-group" data-locale="en"><label class="control-label">Подробное описание</label><textarea name="fields[desc][en]">The key arrives right after payment.</textarea></div>
+<div class="form-group lot-field" data-id="region"><label class="control-label">Регион</label><select name="fields[region]"><option value="any" selected>Любой</option><option value="ru">Россия и СНГ</option></select></div>
+<div class="form-group" data-locale="ru"><label class="control-label">Сообщение покупателю после оплаты</label><textarea name="fields[payment_msg][ru]">Спасибо за покупку! Ключ ниже, если что-то не так, пишите.</textarea></div>
+<div class="form-group"><label class="control-label">Товары</label><textarea name="secrets">XXXXX-AAAAA-11111
+XXXXX-BBBBB-22222</textarea></div>
+<input type="hidden" name="deactivate_after_sale" value=""><label><input type="checkbox" name="deactivate_after_sale"> Деактивировать после продажи</label>
+<div class="form-group"><label class="control-label">Цена</label><input type="text" name="price" value="349"><span class="form-control-feedback">₽</span></div>
+<div class="form-group"><label class="control-label">Наличие</label><input type="text" name="amount" value="12"></div>
+<input type="hidden" name="active" value=""><label><input type="checkbox" name="active" checked> Активный лот</label>
+<input type="hidden" name="auto_delivery" value=""><label><input type="checkbox" name="auto_delivery" checked> Автовыдача</label>
+</form>"#;
+                u.lot_form_loaded(gen, crate::lots::parse_form(html));
+            }
+        }
+        "themes" | "mytheme" => {
+            if let Ok(p) = std::env::var("FPT_CT_IMG") {
+                let mut c = u.cfg.lock().unwrap();
+                c.custom_theme.bg_image = p;
+                c.custom_theme.enable_glassmorphism = true;
+                c.custom_theme.container_bg_opacity = 0.6;
+                c.custom_theme.container_bg_color = "#141A33".into();
+                c.custom_theme.text_color = "#F0F2FF".into();
+            }
+            u.open_themes();
+            if name == "mytheme" {
+                u.st(|s| s.set_themes_tab(1));
+            }
+        }
         "templates" | "tpllook" | "autos" => {
             u.st(|s| {
                 s.set_tpl_open(true);

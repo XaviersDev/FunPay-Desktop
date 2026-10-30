@@ -1,4 +1,4 @@
-import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow } from "types.slint";
+import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LotRow, LotSection, LotFieldRow, ThemeCard, Anim } from "types.slint";
 
 export global St {
     in-out property <string> version;
@@ -247,6 +247,59 @@ export global St {
     in-out property <string> upd-version;       // найденная новая версия
     in-out property <bool> upd-busy;
     in-out property <bool> upd-ready;           // скачано, можно перезапустить
+    // мои лоты (pane 5)
+    in-out property <[LotRow]> lots;
+    in-out property <bool> lots-loading;
+    in-out property <string> lots-error;
+    in-out property <int> lots-count;
+    in-out property <bool> lot-open;            // окно редактирования
+    in-out property <bool> lot-loading;
+    in-out property <bool> lot-busy;
+    in-out property <string> lot-id;
+    in-out property <string> lot-title;
+    in-out property <string> lot-status;
+    in-out property <string> lot-currency;
+    in-out property <[LotSection]> lot-sections;
+    in-out property <int> lots-filter;           // 0 все, 1 активные, 2 выключенные
+    in-out property <int> lots-on;
+    in-out property <int> lots-off;
+    in-out property <int> lots-auto;
+    // редактор: поля по вкладкам
+    in-out property <[LotFieldRow]> lot-main;    // цена, наличие
+    in-out property <[LotFieldRow]> lot-flags;   // активен, автовыдача
+    in-out property <[LotFieldRow]> lot-text;    // название и описание на выбранном языке
+    in-out property <[LotFieldRow]> lot-params;  // поля категории
+    in-out property <[LotFieldRow]> lot-after;   // сообщение после оплаты, товары автовыдачи
+    in-out property <int> lot-tab;
+    in-out property <int> lot-lang;
+    in-out property <bool> lot-has-en;
+    in-out property <color> lot-c1;
+    in-out property <color> lot-c2;
+    in-out property <string> lot-mono;
+    in-out property <string> lot-cat;
+    in-out property <string> lot-prev-price;
+    in-out property <string> lot-del;           // id лота, который просят удалить
+    // темы
+    in-out property <bool> themes-open;
+    in-out property <int> themes-tab;           // 0 каталог, 1 своя
+    in-out property <[ThemeCard]> themes;
+    in-out property <bool> themes-loading;
+    in-out property <string> themes-error;
+    in-out property <string> theme-applying;
+    in-out property <string> ct-bg1: "#2F80ED";
+    in-out property <string> ct-bg2: "#8EC5FF";
+    in-out property <string> ct-panel: "#FFFFFF";
+    in-out property <string> ct-text: "#0E1116";
+    in-out property <string> ct-accent: "#2F80ED";
+    in-out property <float> ct-opacity: 1.0;
+    in-out property <bool> ct-has-img;
+    in-out property <image> ct-img;
+    in-out property <float> ct-blur: 0;
+    in-out property <float> ct-bright: 100;
+    in-out property <Anim> ct-anim;
+    in-out property <bool> ct-glass;
+    in-out property <float> ct-glass-blur: 10;
+    in-out property <image> ct-glass-img;
     // обучение при первом запуске
     in-out property <string> tour;              // шаг, "" если выключено
     in-out property <int> tour-n;
@@ -264,6 +317,7 @@ export global St {
     // просмотр картинки
     in-out property <bool> viewer-open;
     in-out property <image> viewer-img;
+    in-out property <Anim> viewer-anim;
     in-out property <bool> viewer-has;
     in-out property <string> viewer-url;
     in-out property <int> viewer-index;
@@ -400,6 +454,28 @@ export global Api {
     callback upd-check();
     callback upd-restart();
     callback open-contact(string);
+    // мои лоты
+    callback open-lots();
+    callback lots-refresh();
+    callback lots-search(string);
+    callback lots-filter-set(int);
+    callback lot-lang-set(int);
+    callback lot-edit(string);
+    callback lot-toggle(string, bool);
+    callback lot-copy(string);
+    callback lot-delete(string);
+    callback lot-web(string);
+    callback lot-field(string, string);
+    callback lot-pick(string, int);
+    callback lot-save();
+    // темы
+    callback open-themes();
+    callback theme-apply(string);
+    callback ct-apply();
+    pure callback hex-color(string) -> color;
+    callback ct-pick-image();
+    callback ct-clear-image();
+    callback ct-export();
     // обучение
     callback tour-next();
     callback tour-skip();

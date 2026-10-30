@@ -2,7 +2,7 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { St, Api } from "globals.slint";
 import { OfferRow, ReviewRow, KV } from "types.slint";
-import { IconButton, Avatar, Pill, Toggle, SettingRow, PrimaryButton, LinkText, MenuItem, MenuCard, Dim, TourMark } from "widgets.slint";
+import { IconButton, Avatar, Pill, Toggle, SettingRow, PrimaryButton, LinkText, MenuItem, MenuCard, Dim, TourMark, AnimImage } from "widgets.slint";
 import { Album } from "chatview.slint";
 import { EpicNick } from "epic.slint";
 import { Contacts } from "extras.slint";
@@ -485,6 +485,15 @@ export component SettingsView inherits Rectangle {
                         }
                     }
                     SettingRow {
+                        icon: @image-url("icons/storefront.svg");
+                        title: "Мои лоты";
+                        has-toggle: false;
+                        clicked => {
+                            St.settings-open = false;
+                            Api.open-lots();
+                        }
+                    }
+                    SettingRow {
                         icon: @image-url("icons/receipt_long.svg");
                         title: "Сделки и финансы";
                         has-toggle: false;
@@ -574,10 +583,10 @@ export component SettingsView inherits Rectangle {
                     }
                     SettingRow {
                         icon: @image-url("icons/dark_mode.svg");
-                        title: St.tg-theme != "" ? "Тема: " + St.tg-theme : "Тема из Telegram";
-                        hint: St.tg-theme != "" ? "Нажмите, чтобы выбрать другую. Сбросить можно выбором темы выше." : "Файл .tdesktop-theme с компьютера или .attheme с телефона";
+                        title: St.tg-theme != "" ? "Тема: " + St.tg-theme : "Свои темы";
+                        hint: St.tg-theme != "" ? "Нажмите, чтобы выбрать другую. Сбросить можно выбором темы выше." : "Готовые темы, своя тема или файл темы";
                         has-toggle: false;
-                        clicked => { Api.import-theme(); }
+                        clicked => { Api.open-themes(); }
                     }
                     Rectangle { height: 1px; background: Theme.line; }
                     SettingRow {
@@ -643,11 +652,12 @@ export component ImageViewer inherits Rectangle {
     TouchArea {
         clicked => { St.viewer-open = false; }
     }
-    if St.viewer-has: Image {
+    if St.viewer-has: AnimImage {
         width: parent.width - 120px;
         height: parent.height - 110px;
         y: 44px;
         source: St.viewer-img;
+        anim: St.viewer-anim;
         image-fit: contain;
     }
     if !St.viewer-has: Text {
@@ -993,12 +1003,6 @@ export component DescDialog inherits Rectangle {
                 text: St.desc-status;
                 color: St.desc-busy ? Theme.muted : Theme.danger;
                 font-size: 13px;
-                wrap: word-wrap;
-            }
-            Text {
-                text: "В первый раз приложение подтвердит, что аккаунт ваш: на минуту создаст лот «FPT Verify» и сразу его удалит.";
-                color: Theme.faint;
-                font-size: 12px;
                 wrap: word-wrap;
             }
             HorizontalLayout {

@@ -11,6 +11,9 @@ pub struct Config {
     /// Прочие куки FunPay (PHPSESSID, golden_seal...), привязаны к golden_key.
     pub cookies: BTreeMap<String, String>,
     pub cookies_for: String,
+    /// User-Agent встроенного браузера, через который вошли
+    #[serde(default)]
+    pub user_agent: String,
     /// 0 как в системе, 1 светлая, 2 тёмная
     pub theme: i32,
     pub notifications: bool,
@@ -66,6 +69,10 @@ pub struct Config {
     pub auto_update: bool,
     /// Обучение уже пройдено или пропущено
     pub tour_done: bool,
+    /// Выключенные лоты по аккаунтам: FunPay не показывает их на странице профиля
+    pub inactive_lots: BTreeMap<String, Vec<crate::lots::MyLot>>,
+    /// Своя тема из редактора
+    pub custom_theme: crate::tgtheme::FpTheme,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -108,6 +115,29 @@ pub struct TgTheme {
     /// путь к картинке обоев (копия в папке приложения)
     pub wall: String,
     pub wall_tiled: bool,
+    /// непрозрачность пузырей сообщений (1 сплошные)
+    #[serde(default = "one")]
+    pub msg_alpha: f32,
+    /// матовое стекло под сообщениями
+    #[serde(default)]
+    pub glass: bool,
+    #[serde(default = "ten")]
+    pub glass_blur: f32,
+    /// для анимированного фона
+    #[serde(default)]
+    pub wall_blur: f32,
+    #[serde(default = "hundred")]
+    pub wall_bright: f32,
+}
+
+fn one() -> f32 {
+    1.0
+}
+fn ten() -> f32 {
+    10.0
+}
+fn hundred() -> f32 {
+    100.0
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -130,6 +160,7 @@ impl Default for Config {
             golden_key: String::new(),
             cookies: BTreeMap::new(),
             cookies_for: String::new(),
+            user_agent: String::new(),
             theme: 0,
             notifications: true,
             notify_in_focus: false,
@@ -167,6 +198,8 @@ impl Default for Config {
             epic_anim: true,
             auto_update: true,
             tour_done: false,
+            inactive_lots: BTreeMap::new(),
+            custom_theme: Default::default(),
         }
     }
 }

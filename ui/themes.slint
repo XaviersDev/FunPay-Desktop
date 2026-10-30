@@ -1,0 +1,272 @@
+import { ScrollView, Slider } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { ThemeCard } from "types.slint";
+import { IconButton, Toggle, PrimaryButton, Dim, Pill, AnimImage } from "widgets.slint";
+import { Field } from "templates.slint";
+
+component Tab inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    callback clicked();
+    height: 32px;
+    border-radius: 7px;
+    background: on ? Theme.panel : ta.has-hover ? Theme.hover : transparent;
+    drop-shadow-blur: on ? 3px : 0px;
+    drop-shadow-color: Theme.shadow;
+    Text { text: root.text; color: root.on ? Theme.ink : Theme.muted; font-size: 13px; font-weight: root.on ? 600 : 500; }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component Card inherits Rectangle {
+    in property <ThemeCard> t;
+    in property <length> w: 172px;
+    width: w;
+    height: 176px;
+    border-radius: 12px;
+    background: Theme.field;
+    border-width: St.theme-applying == t.id ? 2px : 0px;
+    border-color: Theme.accent;
+    clip: true;
+    Rectangle {
+        y: 0;
+        height: 112px;
+        width: root.width;
+        background: @linear-gradient(135deg, t.c1 0%, t.c2 100%);
+        if t.has-preview: Image { width: parent.width; height: parent.height; source: t.preview; image-fit: cover; }
+    }
+    VerticalLayout {
+        y: 118px;
+        height: 56px;
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 1px;
+        Text { text: t.name; color: Theme.ink; font-size: 13px; font-weight: 650; overflow: elide; }
+        Text { text: t.author != "" ? t.author : t.desc; color: Theme.muted; font-size: 11.5px; overflow: elide; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { Api.theme-apply(t.id); } }
+    if ta.has-hover: Rectangle { background: #00000012; }
+    if St.theme-applying == t.id: Rectangle {
+        y: 0;
+        height: 112px;
+        background: #00000055;
+        Text { text: "Применяю…"; color: white; font-size: 13px; font-weight: 600; }
+    }
+}
+
+component ColorRow inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <string> hex;
+    spacing: 10px;
+    Rectangle {
+        width: 30px;
+        height: 30px;
+        border-radius: 15px;
+        border-width: 1px;
+        border-color: Theme.line;
+        background: Api.hex-color(root.hex);
+    }
+    Text { text: label; color: Theme.ink; font-size: 13.5px; vertical-alignment: center; width: 130px; }
+    Field { width: 120px; height: 34px; font-size: 13px; text <=> root.hex; placeholder: "#RRGGBB"; }
+}
+
+export component ThemesDialog inherits Rectangle {
+    property <bool> shown;
+    property <length> cw: min(640px, root.width - 24px);
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim { dismiss => { St.themes-open = false; } }
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.96;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: root.cw;
+        height: min(root.height - 24px, 640px);
+        border-radius: 14px;
+        background: Theme.panel;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: Theme.shadow;
+        clip: true;
+        TouchArea { }
+        VerticalLayout {
+            Rectangle {
+                height: 54px;
+                HorizontalLayout {
+                    padding-left: 20px;
+                    padding-right: 8px;
+                    Text { text: "Темы"; color: Theme.ink; font-size: 17px; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton { icon: @image-url("icons/close.svg"); clicked => { St.themes-open = false; } }
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-bottom: 10px;
+                Rectangle {
+                    height: 38px;
+                    border-radius: 9px;
+                    background: Theme.field;
+                    HorizontalLayout {
+                        padding: 3px;
+                        spacing: 2px;
+                        Tab { text: "Готовые темы"; on: St.themes-tab == 0; clicked => { St.themes-tab = 0; } }
+                        Tab { text: "Своя тема"; on: St.themes-tab == 1; clicked => { St.themes-tab = 1; } }
+                    }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+            if St.themes-tab == 0: Rectangle {
+                vertical-stretch: 1;
+                ScrollView {
+                    content-width: self.visible-width;
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 20px;
+                        padding-top: 14px;
+                        spacing: 12px;
+                        // сетка в 3 колонки
+                        Rectangle {
+                            property <length> cardw: (root.cw - 40px - 24px - 14px) / 3;
+                            height: ceil(St.themes.length / 3) * 188px;
+                            for t[i] in St.themes: Card {
+                                t: t;
+                                w: parent.cardw;
+                                x: mod(i, 3) * (parent.cardw + 12px);
+                                y: floor(i / 3) * 188px;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            PrimaryButton { width: 190px; flat: true; text: "Тема из файла"; clicked => { Api.import-theme(); } }
+                            PrimaryButton { width: 190px; flat: true; text: "Обычная тема"; clicked => { Api.reset-theme(); St.themes-open = false; } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Text {
+                            text: "Подходят файлы .fptheme, .tdesktop-theme и .attheme. Фоном может быть и гифка.";
+                            color: Theme.faint;
+                            font-size: 12px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                if St.themes-loading && St.themes.length == 0: Pill { text: "Загружаю темы…"; }
+                if St.themes-error != "" && St.themes.length == 0: Pill { text: St.themes-error; }
+            }
+            if St.themes-tab == 1: ScrollView {
+                vertical-stretch: 1;
+                content-width: self.visible-width;
+                VerticalLayout {
+                    alignment: start;
+                    padding: 20px;
+                    padding-top: 14px;
+                    spacing: 10px;
+                    // живое превью
+                    prev := Rectangle {
+                        height: 130px;
+                        border-radius: 12px;
+                        clip: true;
+                        background: @linear-gradient(135deg, Api.hex-color(St.ct-bg1) 0%, Api.hex-color(St.ct-bg2) 100%);
+                        if St.ct-has-img: AnimImage { width: parent.width; height: parent.height; source: St.ct-img; anim: St.ct-anim; image-fit: cover; opacity: St.ct-bright / 100; }
+                        pv := Rectangle {
+                            x: 20px;
+                            y: 20px;
+                            width: 210px;
+                            height: 90px;
+                            border-radius: 12px;
+                            clip: true;
+                            background: St.ct-glass && St.ct-has-img ? transparent : Api.hex-color(St.ct-panel).with-alpha(St.ct-opacity);
+                            if St.ct-glass && St.ct-has-img: Image {
+                                x: -20px;
+                                y: -20px;
+                                width: prev.width;
+                                height: 130px;
+                                source: St.ct-glass-img;
+                                image-fit: cover;
+                                opacity: St.ct-bright / 100;
+                            }
+                            if St.ct-glass && St.ct-has-img: Rectangle { background: Api.hex-color(St.ct-panel).with-alpha(St.ct-opacity); }
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 6px;
+                                Text { text: "darkness21"; color: Api.hex-color(St.ct-text); font-size: 14px; font-weight: 650; }
+                                Text { text: "Оплатил, жду выдачу"; color: Api.hex-color(St.ct-text).with-alpha(0.65); font-size: 12.5px; }
+                                Rectangle {
+                                    width: 90px;
+                                    height: 22px;
+                                    border-radius: 11px;
+                                    background: Api.hex-color(St.ct-accent);
+                                    Text { text: "Привет"; color: white; font-size: 11.5px; font-weight: 600; }
+                                }
+                            }
+                        }
+                    }
+                    ColorRow { label: "Фон, цвет 1"; hex <=> St.ct-bg1; }
+                    ColorRow { label: "Фон, цвет 2"; hex <=> St.ct-bg2; }
+                    ColorRow { label: "Панели"; hex <=> St.ct-panel; }
+                    ColorRow { label: "Текст"; hex <=> St.ct-text; }
+                    ColorRow { label: "Акцент"; hex <=> St.ct-accent; }
+                    Text { text: "Картинка фона"; color: Theme.muted; font-size: 12px; font-weight: 600; }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+                        if St.ct-has-img: Rectangle {
+                            width: 96px;
+                            height: 60px;
+                            border-radius: 8px;
+                            clip: true;
+                            AnimImage { source: St.ct-img; anim: St.ct-anim; width: 96px; height: 60px; image-fit: cover; }
+                        }
+                        PrimaryButton { width: 170px; flat: true; text: St.ct-has-img ? "Другая картинка" : "Выбрать картинку"; clicked => { Api.ct-pick-image(); } }
+                        if St.ct-has-img: PrimaryButton { width: 100px; flat: true; text: "Убрать"; clicked => { Api.ct-clear-image(); } }
+                    }
+                    if St.ct-has-img: HorizontalLayout {
+                        spacing: 10px;
+                        Text { text: "Размытие"; color: Theme.ink; font-size: 13px; vertical-alignment: center; width: 110px; }
+                        Slider { minimum: 0; maximum: 20; value <=> St.ct-blur; }
+                    }
+                    if St.ct-has-img: HorizontalLayout {
+                        spacing: 10px;
+                        Text { text: "Яркость"; color: Theme.ink; font-size: 13px; vertical-alignment: center; width: 110px; }
+                        Slider { minimum: 30; maximum: 100; value <=> St.ct-bright; }
+                    }
+                    Text { text: "Сообщения"; color: Theme.muted; font-size: 12px; font-weight: 600; }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        Text { text: "Плотность"; color: Theme.ink; font-size: 13px; vertical-alignment: center; width: 110px; wrap: word-wrap; }
+                        Slider { minimum: 0.3; maximum: 1; value <=> St.ct-opacity; }
+                    }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        Toggle { checked <=> St.ct-glass; }
+                        Text { text: "Матовое стекло под сообщениями"; color: Theme.ink; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+                    }
+                    if St.ct-glass: HorizontalLayout {
+                        spacing: 10px;
+                        Text { text: "Сила стекла"; color: Theme.ink; font-size: 13px; vertical-alignment: center; width: 110px; }
+                        Slider { minimum: 4; maximum: 30; value <=> St.ct-glass-blur; }
+                    }
+                    if St.ct-glass && !St.ct-has-img: Text {
+                        text: "Стекло видно на картинке фона, на цветном фоне сообщения просто станут прозрачнее.";
+                        color: Theme.faint;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        padding-top: 6px;
+                        PrimaryButton { width: 160px; text: "Применить"; clicked => { Api.ct-apply(); } }
+                        PrimaryButton { width: 190px; flat: true; text: "Сохранить в файл"; clicked => { Api.ct-export(); } }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                }
+            }
+        }
+    }
+}

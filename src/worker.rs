@@ -24,7 +24,8 @@ pub enum Cmd {
     GChatLogin,
     Focus(bool),
     /// Вход через встроенный браузер: все куки funpay.com
-    LoginCookies(Vec<(String, String)>),
+    /// Куки из браузера входа: проверяем, вошёл ли человек до конца (в том числе с кодом)
+    LoginCookies { cookies: Vec<(String, String)>, ua: String },
     LoadProfile { uid: String, gen: u64, card: bool },
     MoreReviews { uid: String, cont: String, gen: u64 },
     LoadOrder { id: String, gen: u64 },
@@ -42,6 +43,13 @@ pub enum Cmd {
     UseAccount { gk: String, cookies: std::collections::BTreeMap<String, String> },
     /// Сколько в заморозке: финансы и закрытые продажи за 48 часов
     LoadFrozen,
+    /// Мои лоты
+    LoadLots { gen: u64 },
+    LotForm { id: String, gen: u64 },
+    LotSave { id: String, form: crate::lots::Form },
+    LotActive { id: String, node: String, on: bool },
+    LotCopy { id: String, node: String },
+    LotDelete { id: String },
 }
 
 struct Open {
@@ -149,30 +157,48 @@ impl Worker {
     }
 
     fn auth_and_announce(&mut self, from_login: bool) {
+        self.auth_and_announce_ex(from_login, false);
+    }
+
+    /// browser: ключ из браузера входа. Если FunPay его ещё не принял (человек вводит код),
+    /// окно браузера не закрываем и ждём следующего ключа.
+    fn auth_and_announce_ex(&mut self, from_login: bool, browser: bool) {
         let res = self.fp.as_mut().unwrap().ensure_auth(true);
-        self.save_cookies();
         match res {
             Ok(()) => {
-                let me = self.me();
+                if from_login {
+                    // куки сессии из браузера сохраняем всегда, даже если FunPay их не менял
+                    if let Some(fp) = self.fp.as_mut() {
+                        fp.cookies_dirty = true;
+                    }
+                }
                 self.save_cookies();
+                let me = self.me();
                 if from_login {
                     let mut c = self.cfg.lock().unwrap();
                     c.golden_key = self.fp.as_ref().unwrap().gk.clone();
                     c.save();
                 }
+                self.save_cookies();
                 self.first_poll = true;
                 self.force_poll = true;
+                if browser {
+                    post(|u| u.login_browser_done(true, String::new()));
+                }
                 post(move |u| u.logged_in(me));
+            }
+            Err(e) if browser && !e.contains("заблокирован") => {
+                self.fp = None;
+                post(move |u| u.login_browser_done(false, e));
             }
             Err(e) => {
                 let fatal = e.contains("golden_key") || e.contains("заблокирован") || from_login;
                 if fatal {
                     self.fp = None;
-                    if !from_login {
-                        let mut c = self.cfg.lock().unwrap();
-                        c.golden_key.clear();
-                        c.cookies.clear();
-                        c.save();
+                    // ключ при запуске не стираем: после входа с кодом FunPay иногда не сразу узнаёт его,
+                    // а человеку так не придётся входить заново. Новый вход всё равно перезапишет ключ.
+                    if browser {
+                        post(|u| u.login_browser_done(false, String::new()));
                     }
                     post(move |u| u.show_login(e));
                 } else {
@@ -186,7 +212,7 @@ impl Worker {
     fn handle(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::Login(gk) => {
-                let gk = gk.trim().trim_start_matches("golden_key=").trim().to_string();
+                let gk = crate::fp::clean_key(&gk);
                 post(|u| u.login_busy(true));
                 self.fp = Some(Fp::new(&gk, Default::default()));
                 self.auth_and_announce(true);
@@ -205,15 +231,22 @@ impl Worker {
                 self.fp = Some(Fp::new(&gk, cookies));
                 self.auth_and_announce(true);
             }
-            Cmd::LoginCookies(list) => {
+            Cmd::LoginCookies { cookies: list, ua } => {
                 let gk = list.iter().find(|(k, _)| k == "golden_key").map(|(_, v)| v.clone()).unwrap_or_default();
                 if gk.is_empty() {
+                    post(|u| u.login_browser_done(false, String::new()));
                     return;
                 }
-                post(|u| u.login_busy(true));
+                // запросы идут с тем же браузером, что и вход
+                if !ua.is_empty() {
+                    crate::fp::set_ua(&ua);
+                    let mut c = self.cfg.lock().unwrap();
+                    c.user_agent = ua;
+                    c.save();
+                }
                 let cookies = list.into_iter().filter(|(k, _)| k != "golden_key").collect();
                 self.fp = Some(Fp::new(&gk, cookies));
-                self.auth_and_announce(true);
+                self.auth_and_announce_ex(true, true);
             }
             Cmd::LoadProfile { uid, gen, card } => {
                 let Some(fp) = self.fp.as_mut() else { return };
@@ -264,6 +297,42 @@ impl Worker {
                 crate::log::write(&format!("заморозка: финансы {} строк {:?}, продажи {} строк {:?}", txns.len(), a, sales.len(), b));
                 let text = crate::money::frozen_text(&crate::money::frozen_merge(a, b));
                 post(move |u| u.frozen_loaded(text));
+            }
+            Cmd::LoadLots { gen } => {
+                let Some(fp) = self.fp.as_mut() else { return };
+                let res = fp.my_lots();
+                self.save_cookies();
+                post(move |u| u.lots_loaded(gen, res));
+            }
+            Cmd::LotForm { id, gen } => {
+                let Some(fp) = self.fp.as_mut() else { return };
+                let res = fp.lot_form(&format!("offer={id}"));
+                self.save_cookies();
+                post(move |u| u.lot_form_loaded(gen, res));
+            }
+            Cmd::LotSave { id, form } => {
+                let Some(fp) = self.fp.as_mut() else { return };
+                let res = fp.lot_save(&form, &format!("https://funpay.com/lots/offerEdit?offer={id}"));
+                self.save_cookies();
+                post(move |u| u.lot_saved(id, res));
+            }
+            Cmd::LotActive { id, node, on } => {
+                let Some(fp) = self.fp.as_mut() else { return };
+                let res = fp.lot_set_active(&id, &node, on);
+                self.save_cookies();
+                post(move |u| u.lot_active_done(id, on, res));
+            }
+            Cmd::LotCopy { id, node } => {
+                let Some(fp) = self.fp.as_mut() else { return };
+                let res = fp.lot_copy(&id, &node);
+                self.save_cookies();
+                post(move |u| u.lot_simple_done("Копия лота создана", res));
+            }
+            Cmd::LotDelete { id } => {
+                let Some(fp) = self.fp.as_mut() else { return };
+                let res = fp.delete_offer(&id);
+                self.save_cookies();
+                post(move |u| u.lot_deleted(id, res));
             }
             Cmd::SaveDesc { text } => self.save_desc(text),
             Cmd::DescCleanup { code, session, text } => self.desc_cleanup(code, session, text),

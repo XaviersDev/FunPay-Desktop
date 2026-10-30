@@ -90,6 +90,24 @@ pub struct Loaded {
     pub colors: BTreeMap<String, String>,
     /// картинка обоев: байты, расширение, плиткой ли
     pub wall: Option<(Vec<u8>, String, bool)>,
+    pub fx: Fx,
+}
+
+/// Эффекты темы: прозрачность сообщений, матовое стекло, обработка гифки на фоне.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Fx {
+    pub msg_alpha: f32,
+    pub glass: bool,
+    pub glass_blur: f32,
+    /// для анимированного фона размытие и яркость применяются при показе
+    pub wall_blur: f32,
+    pub wall_bright: f32,
+}
+
+impl Default for Fx {
+    fn default() -> Self {
+        Self { msg_alpha: 1.0, glass: false, glass_blur: 10.0, wall_blur: 0.0, wall_bright: 100.0 }
+    }
 }
 
 // ------------------------------------------------------------ Telegram Desktop
@@ -327,11 +345,179 @@ fn build(get: &dyn Fn(&[&str]) -> Option<Rgba>, android: bool) -> (bool, BTreeMa
     (dark, c)
 }
 
+// ------------------------------------------------------------ .fptheme (темы FunPay Tools)
+
+/// Тема в формате FunPay Tools (JSON): фон из двух цветов или картинки, цвет блоков, текста и ссылок.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct FpTheme {
+    pub bg_color1: String,
+    pub bg_color2: String,
+    pub container_bg_color: String,
+    pub container_bg_opacity: f32,
+    pub text_color: String,
+    pub link_color: String,
+    pub bg_image: String,
+    pub font: String,
+    pub bg_blur: f32,
+    pub bg_brightness: f32,
+    pub border_radius: f32,
+    pub enable_glassmorphism: bool,
+    pub glassmorphism_blur: f32,
+}
+
+impl Default for FpTheme {
+    fn default() -> Self {
+        Self {
+            bg_color1: "#2F80ED".into(),
+            bg_color2: "#8EC5FF".into(),
+            container_bg_color: "#FFFFFF".into(),
+            container_bg_opacity: 1.0,
+            text_color: "#0E1116".into(),
+            link_color: "#2F80ED".into(),
+            bg_image: String::new(),
+            font: "Onest".into(),
+            bg_blur: 0.0,
+            bg_brightness: 100.0,
+            border_radius: 12.0,
+            enable_glassmorphism: false,
+            glassmorphism_blur: 10.0,
+        }
+    }
+}
+
+fn hex6(s: &str) -> Option<Rgba> {
+    let h = s.trim().trim_start_matches('#');
+    let h = if h.len() == 3 { h.chars().flat_map(|c| [c, c]).collect::<String>() } else { h.to_string() };
+    Rgba::parse_hex(&format!("#{h}"))
+}
+
+/// Картинка фона: ссылка или base64 (data:image/...;base64,...). Размытие и яркость применяем сразу.
+pub fn fp_wall(t: &FpTheme) -> Option<(Vec<u8>, String, bool)> {
+    let src = t.bg_image.trim();
+    if src.is_empty() {
+        return None;
+    }
+    let bytes = if let Some(rest) = src.strip_prefix("data:") {
+        use base64::Engine;
+        let b64 = rest.split(',').nth(1)?;
+        base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?
+    } else if src.starts_with("http") {
+        let c = crate::fp::http_client_follow(30);
+        let r = c.get(src).send().ok()?;
+        if !r.status().is_success() {
+            return None;
+        }
+        r.bytes().ok()?.to_vec()
+    } else {
+        std::fs::read(src).ok()?
+    };
+    // гифку оставляем как есть, размытие и яркость наложатся на каждый кадр при показе
+    if crate::anim::is_animated(&bytes) {
+        let ext = match image::guess_format(&bytes) {
+            Ok(image::ImageFormat::WebP) => "webp",
+            Ok(image::ImageFormat::Png) => "png",
+            _ => "gif",
+        };
+        return Some((bytes, ext.into(), false));
+    }
+    let img = image::load_from_memory(&bytes).ok()?;
+    // размытый фон всё равно мягкий: уменьшаем, так размытие идёт мгновенно
+    let max = if t.bg_blur > 0.5 { 1280 } else { 2200 };
+    let img = if img.width().max(img.height()) > max { img.resize(max, max, image::imageops::FilterType::Triangle) } else { img };
+    let img = if t.bg_blur > 0.5 { img.fast_blur(t.bg_blur.min(30.0)) } else { img };
+    let mut rgb = img.to_rgb8();
+    let k = (t.bg_brightness / 100.0).clamp(0.2, 1.5);
+    if (k - 1.0).abs() > 0.01 {
+        for p in rgb.pixels_mut() {
+            for c in p.0.iter_mut() {
+                *c = ((*c as f32) * k).min(255.0) as u8;
+            }
+        }
+    }
+    let mut out = Vec::new();
+    image::DynamicImage::ImageRgb8(rgb).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Jpeg).ok()?;
+    Some((out, "jpg".into(), false))
+}
+
+/// .fptheme → цвета приложения. Недостающее выводится так же, как для остальных тем.
+pub fn from_fptheme(text: &str, name: &str) -> Result<(Loaded, FpTheme), String> {
+    let v: serde_json::Value = serde_json::from_str(text).map_err(|_| "Файл темы повреждён".to_string())?;
+    if v.get("bgColor1").is_none() || v.get("font").is_none() {
+        return Err("Это не похоже на тему FunPay Tools".into());
+    }
+    // числа в файлах тем бывают строками ("92"), поэтому читаем по полю
+    let st = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).filter(|x| !x.is_empty()).unwrap_or(d).to_string();
+    let num = |k: &str, d: f32| match v.get(k) {
+        Some(serde_json::Value::Number(n)) => n.as_f64().map(|x| x as f32).unwrap_or(d),
+        Some(serde_json::Value::String(x)) => x.trim().parse().unwrap_or(d),
+        _ => d,
+    };
+    let def = FpTheme::default();
+    let t = FpTheme {
+        bg_color1: st("bgColor1", &def.bg_color1),
+        bg_color2: st("bgColor2", &st("bgColor1", &def.bg_color2)),
+        container_bg_color: st("containerBgColor", &def.container_bg_color),
+        container_bg_opacity: num("containerBgOpacity", 1.0),
+        text_color: st("textColor", &def.text_color),
+        link_color: st("linkColor", &def.link_color),
+        bg_image: st("bgImage", ""),
+        font: st("font", "Onest"),
+        bg_blur: num("bgBlur", 0.0),
+        bg_brightness: num("bgBrightness", 100.0),
+        border_radius: num("borderRadius", 12.0),
+        enable_glassmorphism: match v.get("enableGlassmorphism") {
+            Some(serde_json::Value::Bool(b)) => *b,
+            Some(serde_json::Value::String(x)) => x.trim() == "true" || x.trim() == "1",
+            Some(serde_json::Value::Number(n)) => n.as_f64().unwrap_or(0.0) != 0.0,
+            _ => false,
+        },
+        glassmorphism_blur: num("glassmorphismBlur", 10.0),
+    };
+    Ok((build_fp(&t, name, true), t))
+}
+
+pub fn build_fp(t: &FpTheme, name: &str, with_wall: bool) -> Loaded {
+    let bg1 = hex6(&t.bg_color1).unwrap_or(Rgba(0x2F, 0x80, 0xED, 255));
+    let bg2 = hex6(&t.bg_color2).unwrap_or(bg1);
+    let cont = hex6(&t.container_bg_color).unwrap_or(WHITE);
+    // полупрозрачные блоки ложатся на фон: смешиваем, чтобы панели были сплошными
+    let op = t.container_bg_opacity.clamp(0.3, 1.0);
+    let panel = mix(mix(bg1, bg2, 0.5), cont, op);
+    let text = hex6(&t.text_color);
+    let link = hex6(&t.link_color);
+    let get = |keys: &[&str]| -> Option<Rgba> {
+        keys.iter().find_map(|k| match *k {
+            "windowBg" => Some(panel),
+            "windowFg" => text,
+            "activeButtonBg" => link,
+            "historyBg" => Some(bg1),
+            _ => None,
+        })
+    };
+    let (dark, mut colors) = build(&get, false);
+    colors.insert("wall1".into(), bg1.hex());
+    colors.insert("wall2".into(), bg2.hex());
+    let wall = if with_wall { fp_wall(t) } else { None };
+    let animated = wall.as_ref().map(|w| w.1 != "jpg").unwrap_or(false);
+    let fx = Fx {
+        msg_alpha: t.container_bg_opacity.clamp(0.2, 1.0),
+        glass: t.enable_glassmorphism,
+        glass_blur: t.glassmorphism_blur.clamp(0.0, 40.0),
+        wall_blur: if animated { t.bg_blur } else { 0.0 },
+        wall_bright: if animated { t.bg_brightness } else { 100.0 },
+    };
+    Loaded { name: name.to_string(), dark, colors, wall, fx }
+}
+
 /// Читает файл темы любого из поддерживаемых видов.
 pub fn load(path: &std::path::Path) -> Result<Loaded, String> {
     let bytes = std::fs::read(path).map_err(|_| "Не удалось прочитать файл".to_string())?;
     let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Тема").to_string();
     let lower = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    if lower == "fptheme" || lower == "json" || bytes.first() == Some(&b'{') {
+        return from_fptheme(&String::from_utf8_lossy(&bytes), &name).map(|x| x.0);
+    }
     let is_zip = bytes.starts_with(b"PK");
     let (dark, colors, wall) = if is_zip || lower == "tdesktop-theme" || lower == "tdesktop-palette" {
         let (map, wall) = if is_zip { load_td_zip(&bytes)? } else { (parse_td_text(&String::from_utf8_lossy(&bytes)), None) };
@@ -350,12 +536,22 @@ pub fn load(path: &std::path::Path) -> Result<Loaded, String> {
         let (d, c) = build(&get, true);
         (d, c, wall)
     };
-    Ok(Loaded { name, dark, colors, wall })
+    Ok(Loaded { name, dark, colors, wall, fx: Fx::default() })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fptheme_colors() {
+        let j = r##"{"bgColor1":"#ff6d15","bgColor2":"#f4cf78","containerBgColor":"#0b0b0b","containerBgOpacity":0.8,"textColor":"#f0f0f0","linkColor":"#2d6bb3","bgImage":"","font":"Roboto","bgBlur":"5","bgBrightness":"80"}"##;
+        let (l, t) = from_fptheme(j, "x").unwrap();
+        assert!(l.dark);
+        assert_eq!(t.link_color, "#2d6bb3");
+        assert_eq!(l.colors["wall1"], "#FF6D15FF");
+        assert!(from_fptheme(r#"{"a":1}"#, "x").is_err());
+    }
 
     #[test]
     fn td_text_and_refs() {

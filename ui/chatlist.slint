@@ -95,7 +95,7 @@ export component Rail inherits Rectangle {
             col := VerticalLayout {
                 for f in St.folders: RailItem {
                     f: f;
-                    on: St.folder == f.id && St.pane != 4;
+                    on: St.folder == f.id && St.pane != 4 && St.pane != 5;
                 }
                 // сделки и финансы: тот же вид, что у папок
                 Rectangle {
@@ -118,6 +118,29 @@ export component Rail inherits Rectangle {
                     dta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { St.settings-open = false; Api.open-deals(0); }
+                    }
+                }
+                // мои лоты
+                Rectangle {
+                    height: 62px;
+                    background: St.pane == 5 ? Theme.rail-on : lta.has-hover ? #ffffff0d : transparent;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("icons/storefront.svg");
+                                width: 25px;
+                                height: 25px;
+                                colorize: St.pane == 5 ? white : Theme.rail-tx;
+                            }
+                        }
+                        Text { text: "Лоты"; color: St.pane == 5 ? white : Theme.rail-tx; font-size: 11px; font-weight: 550; horizontal-alignment: center; }
+                    }
+                    lta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { St.settings-open = false; Api.open-lots(); }
                     }
                 }
             }

@@ -2,7 +2,7 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { St, Api } from "globals.slint";
 import { MsgRow, Tile, PackRow, StickerCell } from "types.slint";
-import { IconButton, Avatar, Pill, MenuItem, MenuSep, MenuCard, PrimaryButton, TourMark } from "widgets.slint";
+import { IconButton, Avatar, Pill, MenuItem, MenuSep, MenuCard, PrimaryButton, TourMark, AnimImage } from "widgets.slint";
 import { EpicNick } from "epic.slint";
 import { TplBar, TplMenuList } from "templates.slint";
 
@@ -30,10 +30,11 @@ export component Album inherits Rectangle {
             width: 28px;
             colorize: Theme.dark ? #4A5361 : #9FB0C6;
         }
-        if t.has: Image {
+        if t.has: AnimImage {
             width: parent.width;
             height: parent.height;
             source: t.img;
+            anim: t.anim;
             image-fit: cover;
         }
         TouchArea {
@@ -69,6 +70,12 @@ component MsgView inherits Rectangle {
     in property <MsgRow> item;
     in property <length> avail;
     in property <bool> group;
+    // где лежит фон ленты (для матового стекла под пузырём)
+    in property <length> wall-ax;
+    in property <length> wall-ay;
+    in property <length> wall-w;
+    in property <length> wall-h;
+    property <bool> solid: Theme.msg-alpha > 0.98 && !Theme.glass;
     property <length> side: group && !item.out ? 40px : 0px;
     property <length> maxw: max(150px, min(avail - side - 60px, 500px));
     property <length> album-w: min(maxw, 340px);
@@ -179,15 +186,38 @@ component MsgView inherits Rectangle {
             bubble := Rectangle {
                 width: root.bubble-w;
                 height: inner.preferred-height;
-                background: root.bubble-bg ? root.bcolor : transparent;
+                background: !root.bubble-bg || Theme.glass ? transparent : root.solid ? root.bcolor : root.bcolor.with-alpha(Theme.msg-alpha);
                 border-radius: 15px;
-                border-bottom-left-radius: item.tail && !item.out && root.bubble-bg ? 4px : 15px;
-                border-bottom-right-radius: item.tail && item.out && root.bubble-bg ? 4px : 15px;
-                drop-shadow-blur: root.bubble-bg ? 2px : 0px;
+                border-bottom-left-radius: item.tail && !item.out && root.bubble-bg && root.solid ? 4px : 15px;
+                border-bottom-right-radius: item.tail && item.out && root.bubble-bg && root.solid ? 4px : 15px;
+                drop-shadow-blur: root.bubble-bg && root.solid ? 2px : 0px;
                 drop-shadow-offset-y: 1px;
-                drop-shadow-color: root.bubble-bg ? Theme.shadow : transparent;
+                drop-shadow-color: root.bubble-bg && root.solid ? Theme.shadow : transparent;
 
-                if item.tail && root.bubble-bg: Image {
+                // матовое стекло: кусок размытого фона ровно под пузырём и полупрозрачный цвет сверху
+                if Theme.glass && root.bubble-bg: Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    border-radius: 15px;
+                    clip: true;
+                    AnimImage {
+                        x: root.wall-ax - bubble.absolute-position.x;
+                        y: root.wall-ay - bubble.absolute-position.y;
+                        width: root.wall-w;
+                        height: root.wall-h;
+                        source: Theme.c-glass-img;
+                        anim: Theme.c-glass-anim;
+                        image-fit: cover;
+                    }
+                    Rectangle { background: root.bcolor.with-alpha(Theme.msg-alpha); }
+                    Rectangle {
+                        border-radius: 15px;
+                        border-width: 1px;
+                        border-color: #ffffff22;
+                    }
+                }
+
+                if item.tail && root.bubble-bg && root.solid: Image {
                     source: item.out ? @image-url("icons/tail_out.svg") : @image-url("icons/tail.svg");
                     colorize: root.bcolor;
                     width: 11px;
@@ -874,7 +904,7 @@ export component ChatPane inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
         }
         // лента
-        Rectangle {
+        feed := Rectangle {
             vertical-stretch: 1;
             background: Theme.wall;
             clip: true;
@@ -885,10 +915,11 @@ export component ChatPane inherits Rectangle {
                 horizontal-tiling: repeat;
                 vertical-tiling: repeat;
             }
-            if Theme.custom && Theme.c-has-wall-img && !Theme.c-wall-tiled: Image {
+            if Theme.custom && Theme.c-has-wall-img && !Theme.c-wall-tiled: AnimImage {
                 width: parent.width;
                 height: parent.height;
                 source: Theme.c-wall-img;
+                anim: Theme.c-wall-anim;
                 image-fit: cover;
             }
             if Theme.custom && Theme.c-has-wall-img && Theme.c-wall-tiled: Image {
@@ -954,6 +985,10 @@ export component ChatPane inherits Rectangle {
                             item: r;
                             avail: sv.visible-width;
                             group: root.group;
+                            wall-ax: feed.absolute-position.x;
+                            wall-ay: feed.absolute-position.y;
+                            wall-w: feed.width;
+                            wall-h: feed.height;
                         }
                     }
                 }
@@ -1358,10 +1393,11 @@ export component EmptyChat inherits Rectangle {
         horizontal-tiling: repeat;
         vertical-tiling: repeat;
     }
-    if Theme.custom && Theme.c-has-wall-img: Image {
+    if Theme.custom && Theme.c-has-wall-img: AnimImage {
         width: parent.width;
         height: parent.height;
         source: Theme.c-wall-img;
+        anim: Theme.c-wall-anim;
         image-fit: cover;
     }
     Pill { text: "Выберите, кому написать"; }

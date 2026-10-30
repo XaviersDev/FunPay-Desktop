@@ -233,6 +233,56 @@ mod imp {
         })
     }
 
+    static UA: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+    /// Убирает куки funpay.com из профиля браузера (старый ключ мог остаться с прошлого входа).
+    pub fn forget_funpay() {
+        B.with(|b| {
+            if let Some(br) = b.borrow().as_ref() {
+                if let Some(v) = br.views.first() {
+                    if let Ok(list) = v.wv.cookies() {
+                        for c in list {
+                            if c.domain().map(|d| d.trim_start_matches('.').ends_with("funpay.com")).unwrap_or(false) {
+                                let _ = v.wv.delete_cookie(&c);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn user_agent() -> String {
+        UA.lock().unwrap().clone()
+    }
+
+    /// Спросить у страницы входа, как браузер представляется сайту (ответ придёт позже).
+    pub fn request_ua() {
+        B.with(|b| {
+            if let Some(br) = b.borrow().as_ref() {
+                if let Some(v) = br.views.iter().find(|v| v.id == 0) {
+                    let _ = v.wv.evaluate_script_with_callback("navigator.userAgent", |r| {
+                        let ua: String = serde_json::from_str(&r).unwrap_or_default();
+                        if !ua.is_empty() {
+                            *UA.lock().unwrap() = ua;
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    /// Загрузить адрес во вкладку id.
+    pub fn load_tab(id: i32, url: &str) {
+        B.with(|b| {
+            if let Some(br) = b.borrow().as_ref() {
+                if let Some(v) = br.views.iter().find(|v| v.id == id) {
+                    let _ = v.wv.load_url(url);
+                }
+            }
+        });
+    }
+
     pub fn clear_cookies() {
         B.with(|b| {
             if let Some(br) = b.borrow().as_ref() {
@@ -304,6 +354,12 @@ mod imp {
         vec![]
     }
     pub fn clear_cookies() {}
+    pub fn forget_funpay() {}
+    pub fn user_agent() -> String {
+        String::new()
+    }
+    pub fn load_tab(_id: i32, _url: &str) {}
+    pub fn request_ua() {}
     pub fn available() -> bool {
         false
     }

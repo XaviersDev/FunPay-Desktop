@@ -12,6 +12,8 @@ pub struct Decoded {
     pub buf: SharedPixelBuffer<Rgba8Pixel>,
     pub w: u32,
     pub h: u32,
+    /// лист кадров, если картинка анимированная
+    pub anim: Option<(SharedPixelBuffer<Rgba8Pixel>, crate::anim::Info)>,
 }
 
 #[derive(Clone)]
@@ -105,7 +107,14 @@ impl ImgLoader {
                     let Ok((k, url, max)) = job else { break };
                     if let Some(bytes) = fetch_bytes(&client, &url) {
                         if let Some((buf, w, h)) = decode(&bytes, max) {
-                            on_done(Decoded { key: k.clone(), buf, w, h });
+                            // гифки в переписке и в просмотре: лист кадров, аватарки остаются статичными
+                            let anim = if max > 256 {
+                                let (side, budget) = if max >= 2000 { (1280, 30_000_000) } else { (560, 6_000_000) };
+                                crate::anim::sheet(&bytes, side, budget, &|i| i).map(|s| (s.buf, s.info))
+                            } else {
+                                None
+                            };
+                            on_done(Decoded { key: k.clone(), buf, w, h, anim });
                         }
                     }
                 }

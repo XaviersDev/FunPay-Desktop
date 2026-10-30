@@ -1,12 +1,16 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod ai;
+mod anim;
+mod feat3;
 mod album;
 mod browser;
 mod cache;
 mod config;
 mod epic;
 mod feat;
+mod feat2;
+mod lots;
 mod popup;
 mod templates;
 mod update;
@@ -79,6 +83,7 @@ fn main() {
         .select();
 
     let cfg = Arc::new(Mutex::new(config::Config::load()));
+    fp::set_ua(&cfg.lock().unwrap().user_agent);
     let app = AppWindow::new().expect("не удалось создать окно");
     let demo = std::env::var("FPT_DEMO").is_ok();
     let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
@@ -249,6 +254,9 @@ pub fn setup(app: &AppWindow, cfg: Arc<Mutex<config::Config>>, tx: std::sync::mp
     let loader = imgcache::ImgLoader::new(4, |d| {
         post(move |u| {
             let img = Image::from_rgba8(d.buf);
+            if let Some((b, info)) = d.anim {
+                u.anim_ready(&d.key, Image::from_rgba8(b), info);
+            }
             u.image_ready(d.key, img, d.w, d.h);
         });
     });
@@ -699,6 +707,64 @@ fn setup_features(app: &AppWindow, cfg: Arc<Mutex<config::Config>>, demo: bool) 
             with_ui(|u| u.tour_start());
         });
     }
+    api.on_open_lots(|| {
+        with_ui(|u| u.open_lots());
+    });
+    api.on_lots_refresh(|| {
+        with_ui(|u| u.lots_refresh());
+    });
+    api.on_lots_search(|q| {
+        with_ui(|u| u.lots_search(q.to_string()));
+    });
+    api.on_lots_filter_set(|i| {
+        with_ui(|u| u.lots_filter(i));
+    });
+    api.on_lot_lang_set(|i| {
+        with_ui(|u| u.lot_lang(i));
+    });
+    api.on_lot_edit(|id| {
+        with_ui(|u| u.lot_edit(id.to_string()));
+    });
+    api.on_lot_toggle(|id, v| {
+        with_ui(|u| u.lot_toggle(id.to_string(), v));
+    });
+    api.on_lot_copy(|id| {
+        with_ui(|u| u.lot_copy(id.to_string()));
+    });
+    api.on_lot_delete(|id| {
+        with_ui(|u| u.lot_delete(id.to_string()));
+    });
+    api.on_lot_web(|id| {
+        with_ui(|u| u.lot_web(id.to_string()));
+    });
+    api.on_lot_field(|n, v| {
+        with_ui(|u| u.lot_field(n.to_string(), v.to_string()));
+    });
+    api.on_lot_pick(|n, i| {
+        with_ui(|u| u.lot_pick(n.to_string(), i));
+    });
+    api.on_lot_save(|| {
+        with_ui(|u| u.lot_save());
+    });
+    api.on_open_themes(|| {
+        with_ui(|u| u.open_themes());
+    });
+    api.on_theme_apply(|id| {
+        with_ui(|u| u.theme_apply(id.to_string()));
+    });
+    api.on_ct_apply(|| {
+        with_ui(|u| u.ct_apply());
+    });
+    api.on_ct_pick_image(|| {
+        with_ui(|u| u.ct_pick_image());
+    });
+    api.on_ct_clear_image(|| {
+        with_ui(|u| u.ct_clear_image());
+    });
+    api.on_ct_export(|| {
+        with_ui(|u| u.ct_export());
+    });
+    api.on_hex_color(|s| feat2::hex_color(&s));
     api.on_tour_next(|| {
         with_ui(|u| u.tour_next());
     });

@@ -196,7 +196,7 @@ mod tests {
     fn versions() {
         assert_eq!(parse_ver("v4.4.0").unwrap().to_string(), "4.4.0");
         assert_eq!(parse_ver("4.5").unwrap().to_string(), "4.5.0");
-        assert!(parse_ver("v4.3.8").unwrap() <= current());
-        assert!(parse_ver("v4.3.9").unwrap() > current());
+        assert!(parse_ver("v4.4.0").unwrap() <= current());
+        assert!(parse_ver("v4.4.1").unwrap() > current());
     }
 }

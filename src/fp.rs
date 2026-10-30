@@ -11,6 +11,7 @@ pub const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.
 /// Метка клиента, которую просит администрация FunPay: уходит кукой в каждом запросе.
 pub const CLIENT_COOKIE: (&str, &str) = ("fpt_client", "funpay-tools-desktop");
 const FRESH_SESSION_EVERY: Duration = Duration::from_secs(50 * 60);
+pub const NOT_KNOWN: &str = "FunPay не принял golden_key. Проверьте, что скопировали его целиком. Если при входе на сайте FunPay просит код, войдите через браузер: там можно ввести код.";
 const AUTH_TTL: Duration = Duration::from_secs(20 * 60);
 
 pub enum Body {
@@ -34,6 +35,64 @@ pub struct Fp {
     pub cookies_dirty: bool,
 }
 
+/// User-Agent браузера, через который вошли: FunPay видит те же куки с тем же браузером.
+static UA_OVERRIDE: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+
+pub fn set_ua(ua: &str) {
+    let ua = ua.trim();
+    if ua.starts_with("Mozilla/") && ua.len() < 400 {
+        *UA_OVERRIDE.write().unwrap() = ua.to_string();
+    }
+}
+
+pub fn ua() -> String {
+    let o = UA_OVERRIDE.read().unwrap();
+    if o.is_empty() { UA.to_string() } else { o.clone() }
+}
+
+/// Чистим то, что вставили в поле ключа: кавычки, "golden_key=", пробелы, кусок строки кук.
+pub fn clean_key(raw: &str) -> String {
+    static RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| regex::Regex::new(r"golden_key\x22?\s*[=:]\s*\x22?([A-Za-z0-9]+)").unwrap());
+    if let Some(c) = RE.captures(raw) {
+        return c[1].to_string();
+    }
+    raw.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == ';' || c.is_whitespace()).to_string()
+}
+
+/// Заполняет пустые поля формы чем угодно подходящим: список берёт первый вариант, текст и число "1".
+/// force: поля, на которые пожаловался FunPay (их меняем, даже если что-то уже стоит).
+fn fill_required(f: &mut crate::lots::Form, code: &str, force: &[String]) {
+    for _ in 0..3 {
+        let mut changed = false;
+        let names: Vec<String> = f.fields.iter().map(|x| x.name.clone()).collect();
+        for n in names {
+            let Some(x) = f.get(&n).cloned() else { continue };
+            if x.kind == "hidden" || x.kind == "checkbox" || !f.visible(&x) {
+                continue;
+            }
+            let forced = force.iter().any(|k| *k == n || n.contains(&format!("[{k}]")));
+            if !x.value.trim().is_empty() && !forced {
+                continue;
+            }
+            let v = match x.kind.as_str() {
+                "select" => x.options.iter().map(|o| o.0.clone()).find(|v| !v.is_empty() && *v != x.value).or_else(|| x.options.iter().map(|o| o.0.clone()).find(|v| !v.is_empty())),
+                "textarea" => Some(code.to_string()),
+                _ => Some("1".to_string()),
+            };
+            if let Some(v) = v {
+                if v != x.value {
+                    f.set(&n, &v);
+                    changed = true;
+                }
+            }
+        }
+        // выбор в списке может открыть новые поля
+        if !changed {
+            break;
+        }
+    }
+}
+
 pub fn http_client(timeout: u64) -> Client {
     Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -41,7 +100,7 @@ pub fn http_client(timeout: u64) -> Client {
         .connect_timeout(Duration::from_secs(12))
         .gzip(true)
         .brotli(true)
-        .user_agent(UA)
+        .user_agent(ua())
         .build()
         .expect("http client")
 }
@@ -54,7 +113,7 @@ pub fn http_client_follow(timeout: u64) -> Client {
         .connect_timeout(Duration::from_secs(12))
         .gzip(true)
         .brotli(true)
-        .user_agent(UA)
+        .user_agent(ua())
         .build()
         .expect("http client")
 }
@@ -197,12 +256,29 @@ impl Fp {
         if self.gk.is_empty() {
             return Err("Нет golden_key".into());
         }
-        let mut fresh = !self.cookies.contains_key("PHPSESSID")
-            || self.fresh_at.map(|t| t.elapsed() > FRESH_SESSION_EVERY).unwrap_or(true);
+        // Сначала пробуем уже открытую сессию (после входа через браузер в ней пройдена проверка кодом),
+        // свежую сессию по одному golden_key заводим только по таймеру или если старой нет.
+        // Если свежая не вышла, возвращаемся к старой: при включённом входе по коду FunPay может её не дать.
+        let saved = self.cookies.get("PHPSESSID").cloned();
+        let due = self.fresh_at.map(|t| t.elapsed() > FRESH_SESSION_EVERY).unwrap_or(false);
+        let mut modes: Vec<bool> = match (&saved, due) {
+            (None, _) => vec![true, true],
+            (Some(_), false) => vec![false, true],
+            (Some(_), true) => vec![true, false],
+        };
         let mut last_err = String::from("FunPay не ответил");
-        for attempt in 0..3 {
+        let mut not_known = false;
+        let mut attempt = 0u64;
+        while !modes.is_empty() && attempt < 5 {
+            attempt += 1;
+            let fresh = modes[0];
             if fresh {
                 if self.cookies.remove("PHPSESSID").is_some() {
+                    self.cookies_dirty = true;
+                }
+            } else if let Some(v) = &saved {
+                if self.cookies.get("PHPSESSID") != Some(v) {
+                    self.cookies.insert("PHPSESSID".into(), v.clone());
                     self.cookies_dirty = true;
                 }
             }
@@ -210,7 +286,7 @@ impl Fp {
                 Ok(r) => r,
                 Err(e) => {
                     last_err = e;
-                    std::thread::sleep(Duration::from_millis(1500 * (attempt + 1)));
+                    std::thread::sleep(Duration::from_millis(1500 * attempt));
                     continue;
                 }
             };
@@ -223,26 +299,36 @@ impl Fp {
             }
             if is_cloudflare(&r.text) {
                 last_err = "FunPay временно закрыт защитой Cloudflare, пробую ещё".into();
-                std::thread::sleep(Duration::from_millis(2500 * (attempt + 1)));
+                std::thread::sleep(Duration::from_millis(2500 * attempt));
                 continue;
             }
             let Some(d) = parse::parse_main(&r.text) else {
                 last_err = format!("Не удалось прочитать страницу FunPay (HTTP {})", r.status);
+                modes.remove(0);
                 continue;
             };
             if let Some(reason) = d.blocked.clone() {
                 return Err(format!("Аккаунт заблокирован: {reason}"));
             }
             if d.user_id == "0" || d.user_id.is_empty() || d.username.is_empty() {
-                if !fresh {
-                    fresh = true;
-                    continue;
-                }
-                return Err("FunPay не узнал golden_key. Проверьте, что скопировали его целиком и что вы не вышли из аккаунта на сайте.".into());
+                crate::log::write(&format!("вход: FunPay не узнал ключ ({} сессия, HTTP {})", if fresh { "новая" } else { "старая" }, r.status));
+                not_known = true;
+                modes.remove(0);
+                continue;
+            }
+            if fresh && self.fresh_at.is_none() {
+                self.fresh_at = Some(Instant::now());
+            }
+            if !fresh && self.fresh_at.is_none() {
+                // старая сессия рабочая: следующую свежую попробуем по таймеру
+                self.fresh_at = Some(Instant::now());
             }
             self.app = d;
             self.auth_at = Some(Instant::now());
             return Ok(());
+        }
+        if not_known {
+            return Err(NOT_KNOWN.into());
         }
         Err(last_err)
     }
@@ -629,29 +715,43 @@ impl Fp {
         if r.status >= 400 {
             return Err(format!("Форма лота не открылась (HTTP {})", r.status));
         }
-        let mut form = parse::parse_offer_form(&r.text);
-        if form.is_empty() {
-            crate::log::write("offerEdit: форма лота не найдена");
-            return Err("FunPay не отдал форму лота".into());
+        let mut f = crate::lots::parse_form(&r.text).map_err(|e| {
+            crate::log::write(&format!("offerEdit: {e}"));
+            "FunPay не отдал форму лота".to_string()
+        })?;
+        if f.csrf.is_empty() {
+            f.csrf = self.app.csrf.clone();
         }
-        if !form.iter().any(|(k, _)| k == "csrf_token") {
-            parse::form_set(&mut form, "csrf_token", &self.app.csrf.clone());
-        }
-        parse::form_set(&mut form, "offer_id", "0");
-        parse::form_set(&mut form, "node_id", node);
-        parse::form_set(&mut form, "price", "1000");
         let title = format!("FPT Verify {code}");
-        parse::form_set(&mut form, "fields[summary][ru]", &title);
-        if form.iter().any(|(k, _)| k == "fields[summary][en]") {
-            parse::form_set(&mut form, "fields[summary][en]", &title);
+        f.set("offer_id", "0");
+        f.set("node_id", node);
+        f.set("price", "1000");
+        f.set("fields[summary][ru]", &title);
+        if f.get("fields[summary][en]").is_some() {
+            f.set("fields[summary][en]", &title);
         }
-        parse::form_set(&mut form, "fields[desc][ru]", code);
-        parse::form_set(&mut form, "active", "on");
-        if form.iter().any(|(k, v)| k == "amount" && v.trim().is_empty()) {
-            parse::form_set(&mut form, "amount", "1");
+        f.set("fields[desc][ru]", code);
+        f.set("active", "on");
+        f.set("amount", "1");
+        f.fields.retain(|x| x.name != "deleted");
+        fill_required(&mut f, code, &[]);
+        let referer = format!("https://funpay.com/lots/offerEdit?node={node}");
+        // FunPay может назвать ещё поле, которое ему не понравилось: заполняем и пробуем снова
+        let mut last = String::new();
+        for _ in 0..3 {
+            match self.offer_save(f.body(), &referer) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    let named: Vec<String> = e.split(';').filter_map(|p| p.split_once(':').map(|x| x.0.trim().to_string())).filter(|n| !n.is_empty()).collect();
+                    last = e;
+                    if named.is_empty() {
+                        break;
+                    }
+                    fill_required(&mut f, code, &named);
+                }
+            }
         }
-        form.retain(|(k, _)| k != "deleted");
-        self.offer_save(form, &format!("https://funpay.com/lots/offerEdit?node={node}")).map(|_| ())
+        Err(last)
     }
 
     /// Ищет свой лот по тексту в названии и возвращает его id.
@@ -678,6 +778,78 @@ impl Fp {
         let csrf = form.iter().find(|(k, _)| k == "csrf_token").map(|x| x.1.clone()).unwrap_or_else(|| self.app.csrf.clone());
         let body = vec![("csrf_token".to_string(), csrf), ("offer_id".to_string(), offer_id.to_string()), ("deleted".to_string(), "1".to_string())];
         self.offer_save(body, &format!("https://funpay.com/lots/offerEdit?offer={offer_id}")).map(|_| ())
+    }
+
+    // ------------------------------------------------------------ мои лоты
+
+    pub fn my_lots(&mut self) -> Result<Vec<crate::lots::MyLot>, String> {
+        self.ensure_auth(false)?;
+        let uid = self.app.user_id.clone();
+        let r = self.request(false, &format!("https://funpay.com/users/{uid}/"), Body::None, false)?;
+        if r.status >= 400 {
+            return Err(format!("Профиль не открылся (HTTP {})", r.status));
+        }
+        Ok(crate::lots::parse_my_lots(&r.text))
+    }
+
+    /// Форма лота: offer=ID для своего лота, node=ID для нового в категории.
+    pub fn lot_form(&mut self, query: &str) -> Result<crate::lots::Form, String> {
+        self.ensure_auth(false)?;
+        let r = self.request(false, &format!("https://funpay.com/lots/offerEdit?{query}"), Body::None, false)?;
+        if r.status == 401 || r.status == 403 {
+            return Err("FunPay не пустил: войдите в аккаунт заново".into());
+        }
+        if r.status >= 400 {
+            return Err(format!("Форма лота не открылась (HTTP {})", r.status));
+        }
+        let mut f = crate::lots::parse_form(&r.text)?;
+        if f.csrf.is_empty() {
+            f.csrf = self.app.csrf.clone();
+        }
+        Ok(f)
+    }
+
+    pub fn lot_save(&mut self, form: &crate::lots::Form, referer: &str) -> Result<(), String> {
+        self.offer_save(form.body(), referer).map(|_| ())
+    }
+
+    /// Включить или выключить лот.
+    pub fn lot_set_active(&mut self, id: &str, node: &str, on: bool) -> Result<(), String> {
+        let mut f = self.lot_form(&format!("offer={id}"))?;
+        f.set("active", if on { "on" } else { "" });
+        if on && f.db_amount == Some(0) && f.get("amount").map(|a| a.value.trim().is_empty() || a.value.trim() == "0").unwrap_or(false) {
+            f.set("amount", "1");
+        }
+        if f.value("node_id").is_empty() && !node.is_empty() {
+            f.set("node_id", node);
+        }
+        self.lot_save(&f, &format!("https://funpay.com/lots/offerEdit?offer={id}"))
+    }
+
+    /// Копия лота в той же категории: пустая форма категории, значения из оригинала.
+    pub fn lot_copy(&mut self, id: &str, node: &str) -> Result<(), String> {
+        let src = self.lot_form(&format!("offer={id}"))?;
+        let node = if src.value("node_id").is_empty() { node.to_string() } else { src.value("node_id") };
+        if node.is_empty() {
+            return Err("Не понял, в какой категории лот".into());
+        }
+        let mut blank = self.lot_form(&format!("node={node}"))?;
+        let names: Vec<String> = blank.fields.iter().map(|f| f.name.clone()).collect();
+        for n in names {
+            match n.as_str() {
+                "offer_id" => blank.set(&n, "0"),
+                "node_id" => blank.set(&n, &node),
+                "deleted" => {}
+                _ => {
+                    if let Some(v) = src.get(&n) {
+                        let v = v.value.clone();
+                        blank.set(&n, &v);
+                    }
+                }
+            }
+        }
+        blank.fields.retain(|f| f.name != "deleted");
+        self.lot_save(&blank, &format!("https://funpay.com/lots/offerEdit?node={node}"))
     }
 
     /// Аватарка со страницы профиля (на главной её иногда нет).
@@ -735,6 +907,28 @@ pub fn now_msk() -> chrono::NaiveDateTime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verify_form_filled() {
+        let html = r#"<form class="form-offer-editor"><input type="hidden" name="csrf_token" value="t">
+<div class="form-group"><label>Сервер</label><select name="server_id"><option value="">Выберите</option><option value="5">EU</option></select></div>
+<div class="form-group"><label>Ник</label><input type="text" name="fields[nick]" value=""></div>
+<div class="form-group"><label>Цена</label><input type="text" name="price" value=""></div></form>"#;
+        let mut f = crate::lots::parse_form(html).unwrap();
+        fill_required(&mut f, "123", &[]);
+        assert_eq!(f.value("server_id"), "5");
+        assert_eq!(f.value("fields[nick]"), "1");
+    }
+
+    #[test]
+    fn key_cleanup() {
+        let k = "abcdefghijklmnopqrstuvwxyz012345";
+        assert_eq!(clean_key(k), k);
+        assert_eq!(clean_key(&format!("  \"{k}\"; ")), k);
+        assert_eq!(clean_key(&format!("golden_key={k}")), k);
+        assert_eq!(clean_key(&format!("PHPSESSID=zz; golden_key={k}; cookie_prefs=1")), k);
+        assert_eq!(clean_key(&format!("\"golden_key\": \"{k}\"")), k);
+    }
 
     #[test]
     fn send_errors() {

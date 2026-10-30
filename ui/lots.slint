@@ -1,0 +1,724 @@
+import { ScrollView, ComboBox } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { LotRow, LotSection, LotFieldRow } from "types.slint";
+import { IconButton, Toggle, PrimaryButton, Dim, MenuCard, MenuItem, MenuSep, Pill } from "widgets.slint";
+import { Field } from "templates.slint";
+
+// ============================================================ обложка лота
+
+// Обложка лота: ровный цвет игры, по центру что продаётся и в какой игре. Шрифт сам ужимается под ширину.
+component Cover inherits Rectangle {
+    in property <color> c1;
+    in property <string> kind;
+    in property <string> game;
+    in property <bool> off;
+    property <length> base: 22px;
+    property <length> fit: min(root.base, root.base * (root.width - 28px) / max(1px, max(p1.preferred-width, p2.preferred-width)));
+    clip: true;
+    background: c1;
+    p1 := Text { visible: false; width: 0; height: 0; text: root.kind; font-size: root.base; font-weight: 800; }
+    p2 := Text { visible: false; width: 0; height: 0; text: root.game; font-size: root.base; font-weight: 800; }
+    VerticalLayout {
+        alignment: center;
+        spacing: 0px;
+        if root.kind != "": Text {
+            text: root.kind;
+            color: white;
+            font-size: max(11px, root.fit);
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.game;
+            color: #ffffffcc;
+            font-size: max(11px, root.fit);
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+    }
+    if root.off: Rectangle { background: Theme.dark ? #0b0d12b8 : #f2f4f7b0; }
+}
+
+component Badge inherits Rectangle {
+    in property <string> text;
+    in property <color> bg: #00000040;
+    in property <color> fg: white;
+    height: 20px;
+    width: bt.preferred-width + 14px;
+    border-radius: 10px;
+    background: bg;
+    bt := Text { text: root.text; color: root.fg; font-size: 11px; font-weight: 700; }
+}
+
+// ============================================================ карточка лота
+
+component LotCard inherits Rectangle {
+    in property <LotRow> lot;
+    property <length> mx;
+    property <length> my;
+    border-radius: 14px;
+    background: Theme.field;
+    border-width: 1px;
+    border-color: ta.has-hover ? lot.c1.with-alpha(0.9) : Theme.line;
+    drop-shadow-blur: ta.has-hover ? 18px : 0px;
+    drop-shadow-offset-y: ta.has-hover ? 6px : 0px;
+    drop-shadow-color: lot.c1.with-alpha(0.25);
+    animate border-color, drop-shadow-blur, drop-shadow-offset-y { duration: 140ms; }
+    clip: true;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Api.lot-edit(lot.id); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                root.mx = self.mouse-x;
+                root.my = self.mouse-y;
+                menu.show();
+            }
+        }
+    }
+    Cover {
+        y: 0;
+        height: 92px;
+        c1: lot.c2;
+        kind: lot.kind;
+        game: lot.game;
+        off: !lot.active;
+    }
+    // меню
+    if ta.has-hover || mb.has-hover: Rectangle {
+        x: root.width - 36px;
+        y: 6px;
+        width: 30px;
+        height: 30px;
+        border-radius: 15px;
+        background: mb.has-hover ? #00000066 : #00000040;
+        Image { source: @image-url("icons/more_vert.svg"); width: 18px; colorize: white; }
+    }
+    mb := TouchArea {
+        x: root.width - 36px;
+        y: 6px;
+        width: 30px;
+        height: 30px;
+        mouse-cursor: pointer;
+        clicked => {
+            root.mx = root.width - 214px;
+            root.my = 38px;
+            menu.show();
+        }
+    }
+    // текст
+    VerticalLayout {
+        y: 100px;
+        height: root.height - 100px;
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-bottom: 10px;
+        spacing: 2px;
+        // длинное название обрезается по второй строке
+        Rectangle {
+            height: 38px;
+            clip: true;
+            Text {
+                y: 0;
+                width: parent.width;
+                height: self.preferred-height;
+                text: lot.title;
+                color: Theme.ink;
+                font-size: 13.5px;
+                font-weight: 600;
+                wrap: word-wrap;
+                vertical-alignment: top;
+                opacity: lot.active ? 1 : 0.6;
+            }
+        }
+        // сервер, наличие, автовыдача
+        HorizontalLayout {
+            height: 20px;
+            spacing: 5px;
+            alignment: start;
+            if !lot.active: Badge { text: "Выключен"; bg: Theme.danger.with-alpha(0.16); fg: Theme.danger; }
+            if lot.amount != "": Badge { text: "× " + lot.amount; bg: Theme.hover; fg: Theme.ink; }
+            if lot.auto: Badge { text: "⚡ авто"; bg: Theme.accent.with-alpha(0.16); fg: Theme.accent; }
+            if lot.server != "": Text { text: lot.server; color: Theme.muted; font-size: 11.5px; vertical-alignment: center; overflow: elide; }
+        }
+        Rectangle { vertical-stretch: 1; }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: lot.price;
+                color: lot.active ? Theme.ink : Theme.muted;
+                font-size: 18px;
+                font-weight: 800;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                Toggle {
+                    checked: lot.active;
+                    toggled(v) => { Api.lot-toggle(lot.id, v); }
+                }
+            }
+        }
+    }
+    menu := PopupWindow {
+        x: min(root.mx, root.width - 214px);
+        y: root.my;
+        MenuCard {
+            VerticalLayout {
+                padding-top: 6px;
+                padding-bottom: 6px;
+                MenuItem { icon: @image-url("icons/edit.svg"); text: "Редактировать"; activated => { Api.lot-edit(lot.id); } }
+                MenuItem { icon: @image-url("icons/content_copy.svg"); text: "Сделать копию"; activated => { Api.lot-copy(lot.id); } }
+                MenuItem { icon: @image-url("icons/open_in_new.svg"); text: "Открыть на FunPay"; activated => { Api.lot-web(lot.id); } }
+                MenuSep { }
+                MenuItem { icon: @image-url("icons/delete.svg"); text: "Удалить"; danger: true; activated => { St.lot-del = lot.id; } }
+            }
+        }
+    }
+}
+
+// фильтр: все, активные, выключенные
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <int> count;
+    in property <bool> on;
+    callback clicked();
+    height: 32px;
+    width: cl.preferred-width + 26px;
+    border-radius: 16px;
+    background: on ? Theme.accent : ta.has-hover ? Theme.hover : Theme.field;
+    cl := HorizontalLayout {
+        alignment: center;
+        spacing: 6px;
+        Text { text: root.text; color: root.on ? Theme.on-accent : Theme.ink; font-size: 13px; font-weight: 600; vertical-alignment: center; }
+        Text { text: root.count; color: root.on ? Theme.on-accent.with-alpha(0.75) : Theme.muted; font-size: 13px; font-weight: 700; vertical-alignment: center; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component SectionHead inherits Rectangle {
+    in property <LotSection> sec;
+    height: 46px;
+    HorizontalLayout {
+        padding-top: 12px;
+        padding-bottom: 6px;
+        spacing: 10px;
+        Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            background: sec.c2;
+            Text { text: sec.mono; color: white; font-size: 11px; font-weight: 800; }
+        }
+        Text { text: sec.game; color: Theme.ink; font-size: 15px; font-weight: 750; vertical-alignment: center; overflow: elide; }
+        if sec.kind != "": Text { text: sec.kind; color: Theme.muted; font-size: 13px; vertical-alignment: center; overflow: elide; }
+        Rectangle {
+            width: cc.preferred-width + 14px;
+            height: 20px;
+            y: 4px;
+            border-radius: 10px;
+            background: sec.c1.with-alpha(0.16);
+            cc := Text { text: sec.count; color: Theme.dark ? sec.c1.brighter(0.4) : sec.c1.darker(0.2); font-size: 11.5px; font-weight: 800; }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            Rectangle { height: 1px; y: parent.height / 2; background: Theme.line; }
+        }
+    }
+}
+
+export component LotsPane inherits Rectangle {
+    background: Theme.panel;
+    VerticalLayout {
+        Rectangle {
+            height: 52px;
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 8px;
+                spacing: 6px;
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { icon: @image-url("icons/arrow_back.svg"); clicked => { Api.pane-back(); } }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text { text: "Мои лоты"; color: Theme.ink; font-size: 17px; font-weight: 750; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { icon: @image-url("icons/refresh.svg"); clicked => { Api.lots-refresh(); } }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton { icon: @image-url("icons/open_in_new.svg"); clicked => { Api.lot-web(""); } }
+                }
+            }
+        }
+        // фильтры и поиск
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-bottom: 4px;
+            spacing: 8px;
+            alignment: start;
+            Chip { text: "Все"; count: St.lots-count; on: St.lots-filter == 0; clicked => { Api.lots-filter-set(0); } }
+            Chip { text: "Активные"; count: St.lots-on; on: St.lots-filter == 1; clicked => { Api.lots-filter-set(1); } }
+            Chip { text: "Выключены"; count: St.lots-off; on: St.lots-filter == 2; clicked => { Api.lots-filter-set(2); } }
+            if St.lots-auto > 0 && root.width > 600px: Text {
+                text: "⚡ " + St.lots-auto + " с автовыдачей";
+                color: Theme.muted;
+                font-size: 12.5px;
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 8px;
+            padding-bottom: 2px;
+            Field {
+                placeholder: "Поиск по лотам и играм";
+                edited => { Api.lots-search(self.text); }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            sv := ScrollView {
+                content-width: self.visible-width;
+                grid := VerticalLayout {
+                    property <length> inner: sv.visible-width - 32px;
+                    property <int> cols: self.inner >= 680px ? 3 : self.inner >= 420px ? 2 : 1;
+                    property <length> gap: 12px;
+                    property <length> cardw: (self.inner - (self.cols - 1) * self.gap) / self.cols;
+                    property <length> cardh: 206px;
+                    alignment: start;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-bottom: 18px;
+                    for sec in St.lot-sections: VerticalLayout {
+                        SectionHead { sec: sec; }
+                        Rectangle {
+                            height: ceil(sec.count / grid.cols) * (grid.cardh + grid.gap);
+                            for l[i] in sec.lots: LotCard {
+                                lot: l;
+                                width: grid.cardw;
+                                height: grid.cardh;
+                                x: mod(i, grid.cols) * (grid.cardw + grid.gap);
+                                y: floor(i / grid.cols) * (grid.cardh + grid.gap) + 4px;
+                            }
+                        }
+                    }
+                }
+            }
+            if St.lots-loading && St.lot-sections.length == 0: Pill { text: "Загружаю лоты…"; }
+            if !St.lots-loading && St.lot-sections.length == 0 && St.lots-error == "": Pill {
+                text: St.lots-count == 0 ? "Лотов пока нет" : "Ничего не нашлось";
+            }
+            if St.lots-error != "": Pill { text: St.lots-error; }
+        }
+    }
+    // подтверждение удаления
+    if St.lot-del != "": Rectangle {
+        Dim { dismiss => { St.lot-del = ""; } }
+        Rectangle {
+            width: min(340px, root.width - 32px);
+            height: dl.preferred-height;
+            border-radius: 14px;
+            background: Theme.panel;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: Theme.shadow;
+            TouchArea { }
+            dl := VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+                Text { text: "Удалить лот?"; color: Theme.ink; font-size: 17px; font-weight: 650; }
+                Text { text: "Он пропадёт с FunPay насовсем, вернуть не получится."; color: Theme.muted; font-size: 13px; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    PrimaryButton { text: "Отмена"; flat: true; clicked => { St.lot-del = ""; } }
+                    Rectangle {
+                        height: 42px;
+                        border-radius: 10px;
+                        background: da.has-hover ? Theme.danger.brighter(0.1) : Theme.danger;
+                        Text { text: "Удалить"; color: white; font-size: 14.5px; font-weight: 600; }
+                        da := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                Api.lot-delete(St.lot-del);
+                                St.lot-del = "";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================ редактор лота
+
+component Label inherits Text {
+    color: Theme.muted;
+    font-size: 12px;
+    font-weight: 650;
+    wrap: word-wrap;
+}
+
+// обычное поле формы
+component FieldRow inherits Rectangle {
+    in property <LotFieldRow> f;
+    height: fl.preferred-height;
+    fl := VerticalLayout {
+        spacing: 6px;
+        padding-bottom: 10px;
+        if f.kind != "checkbox": Label { text: f.label; }
+        if f.kind == "text" || f.kind == "number": Field {
+            text: f.value;
+            placeholder: f.placeholder;
+            edited => { Api.lot-field(f.name, self.text); }
+        }
+        if f.kind == "textarea": Field {
+            multi: true;
+            height: f.name == "fields[desc][ru]" || f.name == "fields[desc][en]" || f.name == "secrets" ? 190px : 110px;
+            text: f.value;
+            edited => { Api.lot-field(f.name, self.text); }
+        }
+        if f.kind == "select": ComboBox {
+            model: f.options;
+            current-index: f.sel;
+            selected(v) => { Api.lot-pick(f.name, self.current-index); }
+        }
+        if f.kind == "checkbox": HorizontalLayout {
+            spacing: 10px;
+            Toggle { checked: f.value == "on"; toggled(v) => { Api.lot-field(f.name, v ? "on" : ""); } }
+            Text { text: f.label; color: Theme.ink; font-size: 13.5px; vertical-alignment: center; wrap: word-wrap; horizontal-stretch: 1; }
+        }
+        if f.hint != "": Text { text: f.hint; color: Theme.faint; font-size: 11.5px; wrap: word-wrap; }
+    }
+}
+
+// цена и наличие: крупно
+component BigField inherits Rectangle {
+    in property <LotFieldRow> f;
+    height: bl.preferred-height;
+    bl := VerticalLayout {
+        spacing: 6px;
+        padding-bottom: 12px;
+        Label { text: f.name == "price" ? "Цена" : f.label; }
+        Rectangle {
+            height: 50px;
+            fld := Field {
+                height: 50px;
+                font-size: 20px;
+                text: f.value;
+                placeholder: f.name == "price" ? "0" : "∞";
+                edited => { Api.lot-field(f.name, self.text); }
+            }
+            if f.name == "price": Text {
+                x: parent.width - self.preferred-width - 14px;
+                text: St.lot-currency != "" ? St.lot-currency : "₽";
+                color: Theme.muted;
+                font-size: 18px;
+                font-weight: 700;
+            }
+            // наличие: кнопки − и +
+            if f.name == "amount": HorizontalLayout {
+                x: parent.width - 84px;
+                width: 78px;
+                spacing: 4px;
+                alignment: end;
+                for d[k] in [-1, 1]: Rectangle {
+                    y: 8px;
+                    width: 34px;
+                    height: 34px;
+                    border-radius: 9px;
+                    background: sa.has-hover ? Theme.hover : Theme.panel;
+                    Text { text: k == 0 ? "−" : "+"; color: Theme.ink; font-size: 18px; font-weight: 700; }
+                    sa := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            fld.text = "" + max(0, (fld.text.is-float() ? fld.text.to-float() : 0) + d);
+                            Api.lot-field(f.name, fld.text);
+                        }
+                    }
+                }
+            }
+        }
+        if f.hint != "": Text { text: f.hint; color: Theme.faint; font-size: 11.5px; wrap: word-wrap; }
+    }
+}
+
+// переключатель с пояснением
+// переключатель лота: тонкая плашка с названием
+component FlagRow inherits Rectangle {
+    in property <LotFieldRow> f;
+    property <bool> on: f.value == "on";
+    height: max(38px, fr.preferred-height);
+    border-radius: 9px;
+    background: on ? Theme.accent.with-alpha(0.10) : Theme.field;
+    border-width: 1px;
+    border-color: on ? Theme.accent.with-alpha(0.45) : transparent;
+    fr := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 8px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 10px;
+        Text {
+            text: f.name == "active" ? "Лот активен" : f.name == "auto_delivery" ? "Автовыдача" : f.label;
+            color: Theme.ink;
+            font-size: 13px;
+            font-weight: 600;
+            wrap: word-wrap;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle { checked: root.on; toggled(v) => { Api.lot-field(f.name, v ? "on" : ""); } }
+        }
+    }
+}
+
+component Tab inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    in property <color> tint;
+    callback clicked();
+    height: 38px;
+    width: tt.preferred-width + 24px;
+    tt := Text { text: root.text; color: root.on ? Theme.ink : Theme.muted; font-size: 14px; font-weight: root.on ? 700 : 550; }
+    Rectangle {
+        y: parent.height - 3px;
+        height: 3px;
+        width: root.on ? parent.width - 16px : 0px;
+        border-radius: 2px;
+        background: root.tint;
+        animate width { duration: 160ms; easing: ease-out; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component LangSwitch inherits Rectangle {
+    height: 28px;
+    width: 92px;
+    border-radius: 14px;
+    background: Theme.field;
+    Rectangle {
+        x: St.lot-lang == 0 ? 2px : parent.width / 2;
+        y: 2px;
+        width: parent.width / 2 - 2px;
+        height: parent.height - 4px;
+        border-radius: 12px;
+        background: Theme.panel;
+        drop-shadow-blur: 3px;
+        drop-shadow-color: Theme.shadow;
+        animate x { duration: 150ms; easing: ease-out; }
+    }
+    HorizontalLayout {
+        Rectangle {
+            Text { text: "RU"; color: St.lot-lang == 0 ? Theme.ink : Theme.muted; font-size: 12px; font-weight: 750; }
+            TouchArea { mouse-cursor: pointer; clicked => { Api.lot-lang-set(0); } }
+        }
+        Rectangle {
+            Text { text: "EN"; color: St.lot-lang == 1 ? Theme.ink : Theme.muted; font-size: 12px; font-weight: 750; }
+            TouchArea { mouse-cursor: pointer; clicked => { Api.lot-lang-set(1); } }
+        }
+    }
+}
+
+// левая колонка: цена, наличие, переключатели
+component MainCol inherits VerticalLayout {
+    spacing: 6px;
+    for f in St.lot-main: BigField { f: f; }
+    for f in St.lot-flags: FlagRow { f: f; }
+}
+
+export component LotEditor inherits Rectangle {
+    property <bool> shown;
+    property <length> cw: min(900px, root.width - 24px);
+    property <bool> wide: cw >= 680px;
+    // в узком окне начинаем с цены и переключателей
+    init => {
+        if (!root.wide) {
+            St.lot-tab = 3;
+        }
+    }
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim { dismiss => { if (!St.lot-busy) { St.lot-open = false; } } }
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.96;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: root.cw;
+        height: min(root.height - 24px, 720px);
+        border-radius: 16px;
+        background: Theme.panel;
+        drop-shadow-blur: 28px;
+        drop-shadow-color: Theme.shadow;
+        clip: true;
+        TouchArea { }
+        VerticalLayout {
+            // шапка: обложка игры, название и цена
+            Rectangle {
+                height: 124px;
+                Rectangle { background: St.lot-c2; }
+                VerticalLayout {
+                    padding-left: 22px;
+                    padding-right: 22px;
+                    padding-top: 16px;
+                    padding-bottom: 14px;
+                    spacing: 6px;
+                    HorizontalLayout {
+                        alignment: start;
+                        Badge { text: St.lot-cat != "" ? St.lot-cat : "Лот"; bg: #ffffff2e; height: 22px; }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                    HorizontalLayout {
+                        spacing: 16px;
+                        height: 50px;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            clip: true;
+                            ht := Text {
+                                y: max(0px, parent.height - self.height);
+                                width: parent.width;
+                                height: self.preferred-height;
+                                text: St.lot-title != "" ? St.lot-title : "Лот";
+                                color: white;
+                                font-size: 18px;
+                                font-weight: 750;
+                                wrap: word-wrap;
+                            }
+                        }
+                        if St.lot-prev-price != "": Text {
+                            text: St.lot-prev-price;
+                            color: white;
+                            font-size: 26px;
+                            font-weight: 850;
+                            vertical-alignment: bottom;
+                        }
+                    }
+                }
+                Rectangle {
+                    x: parent.width - 46px;
+                    y: 10px;
+                    width: 34px;
+                    height: 34px;
+                    border-radius: 17px;
+                    background: ca.has-hover ? #00000066 : #00000038;
+                    Image { source: @image-url("icons/close.svg"); width: 20px; colorize: white; }
+                    ca := TouchArea { mouse-cursor: pointer; clicked => { St.lot-open = false; } }
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                if St.lot-loading: Pill { text: "Загружаю форму лота…"; }
+                if !St.lot-loading: HorizontalLayout {
+                    // широкое окно: слева главное, справа вкладки
+                    if root.wide: Rectangle {
+                        width: 300px;
+                        background: Theme.dark ? #ffffff05 : #00000004;
+                        ScrollView {
+                            content-width: self.visible-width;
+                            VerticalLayout {
+                                alignment: start;
+                                padding: 18px;
+                                padding-right: 16px;
+                                MainCol { }
+                            }
+                        }
+                        Rectangle { x: parent.width - 1px; width: 1px; background: Theme.line; }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        Rectangle {
+                            height: 46px;
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 18px;
+                                spacing: 2px;
+                                VerticalLayout {
+                                    alignment: end;
+                                    HorizontalLayout {
+                                        spacing: 2px;
+                                        if !root.wide: Tab { text: "Главное"; tint: St.lot-c1; on: St.lot-tab == 3; clicked => { St.lot-tab = 3; } }
+                                        Tab { text: "Описание"; tint: St.lot-c1; on: St.lot-tab == 0; clicked => { St.lot-tab = 0; } }
+                                        if St.lot-params.length > 0: Tab { text: "Параметры"; tint: St.lot-c1; on: St.lot-tab == 1; clicked => { St.lot-tab = 1; } }
+                                        if St.lot-after.length > 0: Tab { text: "После оплаты"; tint: St.lot-c1; on: St.lot-tab == 2; clicked => { St.lot-tab = 2; } }
+                                    }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                if St.lot-has-en && St.lot-tab != 1 && St.lot-tab != 3: VerticalLayout {
+                                    alignment: center;
+                                    LangSwitch { }
+                                }
+                            }
+                            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+                        }
+                        ScrollView {
+                            vertical-stretch: 1;
+                            content-width: self.visible-width;
+                            VerticalLayout {
+                                alignment: start;
+                                padding: 20px;
+                                padding-top: 16px;
+                                if St.lot-tab == 3 && !root.wide: MainCol { }
+                                if St.lot-tab == 0 || (St.lot-tab == 3 && root.wide): VerticalLayout {
+                                    for f in St.lot-text: FieldRow { f: f; }
+                                }
+                                if St.lot-tab == 1: VerticalLayout {
+                                    for f in St.lot-params: FieldRow { f: f; }
+                                }
+                                if St.lot-tab == 2: VerticalLayout {
+                                    for f in St.lot-after: FieldRow { f: f; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                height: 66px;
+                Rectangle { y: 0; height: 1px; background: Theme.line; }
+                HorizontalLayout {
+                    padding-left: 20px;
+                    padding-right: 18px;
+                    padding-top: 12px;
+                    padding-bottom: 12px;
+                    spacing: 10px;
+                    Text {
+                        text: St.lot-status;
+                        color: St.lot-status == "Сохранено" ? Theme.ok : Theme.danger;
+                        font-size: 12.5px;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    PrimaryButton {
+                        width: 170px;
+                        flat: true;
+                        text: "Открыть на FunPay";
+                        clicked => { Api.lot-web(St.lot-id); }
+                    }
+                    PrimaryButton {
+                        width: 160px;
+                        text: "Сохранить";
+                        busy: St.lot-busy;
+                        enabled: !St.lot-loading;
+                        clicked => { Api.lot-save(); }
+                    }
+                }
+            }
+        }
+    }
+}

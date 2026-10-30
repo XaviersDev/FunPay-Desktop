@@ -44,9 +44,19 @@ export struct FolderRow {
     unread: int,
 }
 
+// лист кадров анимации: кадры сеткой по cols в ряд
+export struct Anim {
+    frames: int,
+    cols: int,
+    fw: int,
+    fh: int,
+    delay: int,         // мс на кадр
+}
+
 export struct Tile {
     img: image,
     has: bool,
+    anim: Anim,         // если кадров больше одного, img это лист кадров
     x: float,
     y: float,
     w: float,
@@ -212,4 +222,59 @@ export struct AutoRow {
     exact: bool,
     cs: bool,
     enabled: bool,
+}
+
+// свой лот в списке «Мои лоты» (header = заголовок категории)
+export struct LotRow {
+    header: bool,
+    id: string,
+    title: string,
+    category: string,
+    price: string,
+    amount: string,
+    server: string,
+    meta: string,       // строка под названием: сервер, наличие, автовыдача
+    active: bool,
+    auto: bool,
+    c1: color,          // цвет игры
+    c2: color,
+    mono: string,       // монограмма игры: HK, D2
+    kind: string,       // что продаётся: Ключи, Буст
+    game: string,
+}
+
+// категория лотов: игра и её лоты
+export struct LotSection {
+    name: string,
+    game: string,
+    kind: string,
+    mono: string,
+    c1: color,
+    c2: color,
+    count: int,
+    lots: [LotRow],
+}
+
+// поле формы редактирования лота
+export struct LotFieldRow {
+    name: string,
+    kind: string,       // text | number | textarea | select | checkbox
+    label: string,
+    value: string,
+    hint: string,
+    placeholder: string,
+    options: [string],
+    sel: int,
+}
+
+// тема из каталога
+export struct ThemeCard {
+    id: string,
+    name: string,
+    desc: string,
+    author: string,
+    preview: image,
+    has-preview: bool,
+    c1: color,
+    c2: color,
 }

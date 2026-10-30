@@ -1,3 +1,5 @@
+import { Anim } from "types.slint";
+
 
 export global Theme {
     in-out property <bool> dark: false;
@@ -12,6 +14,15 @@ export global Theme {
     in-out property <image> c-wall-img;
     in-out property <bool> c-has-wall-img;
     in-out property <bool> c-wall-tiled;
+    // гифка на фоне: c-wall-img тогда лист кадров
+    in-out property <Anim> c-wall-anim;
+    // прозрачные сообщения: доля непрозрачности пузыря и матовое стекло под ним
+    in-out property <float> c-msg-alpha: 1;
+    in-out property <bool> c-glass;
+    in-out property <image> c-glass-img;
+    in-out property <Anim> c-glass-anim;
+    out property <float> msg-alpha: custom ? c-msg-alpha : 1;
+    out property <bool> glass: custom && c-glass && c-has-wall-img && !c-wall-tiled;
     in-out property <color> c-accent;
     in-out property <color> c-accent-soft;
     in-out property <color> c-panel;
