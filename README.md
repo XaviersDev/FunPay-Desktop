@@ -22,11 +22,11 @@
 <br>
 
 <p align="center">
-  <img src="read_assets/hero.png" width="100%" />
+  <img src="read_assets/hero.jpg" width="100%" />
 </p>
 
 <p align="center">
-  <img src="read_assets/screens/1_chats.png" width="100%" />
+  <img src="read_assets/screens/1_chats.jpg" width="100%" />
 </p>
 
 > [!WARNING]
@@ -34,7 +34,7 @@
 
 ---
 
-<p align="center"><img src="read_assets/plaque_features.png" width="100%" /></p>
+<p align="center"><img src="read_assets/plaque_features.jpg" width="100%" /></p>
 
 ### 💬 Чаты и переписка
 
@@ -55,7 +55,7 @@
 *   **Переписать с ИИ**: правый клик по кнопке отправки превращает черновик в вежливый ответ с учётом переписки
 
 <p align="center">
-  <img src="read_assets/screens/2_templates.png" width="100%" />
+  <img src="read_assets/screens/2_templates.jpg" width="100%" />
 </p>
 
 ### 📦 Сделки и финансы
@@ -66,7 +66,7 @@
 *   **Лоты**: можно редактировать свои лоты и смотреть 
 
 <p align="center">
-  <img src="read_assets/screens/3_deals.png" width="100%" />
+  <img src="read_assets/screens/3_deals.jpg" width="100%" />
 </p>
 
 ### 👤 Профили и аккаунты
@@ -77,7 +77,7 @@
 *   **Несколько аккаунтов** с быстрым переключением
 
 <p align="center">
-  <img src="read_assets/screens/4_profile.png" width="100%" />
+  <img src="read_assets/screens/4_profile.jpg" width="100%" />
 </p>
 
 ### 🔔 Уведомления и фон
@@ -95,12 +95,12 @@
 *   **Автообновление** с GitHub, ничего не нужно скачивать вручную
 
 <p align="center">
-  <img src="read_assets/screens/5_dark.png" width="100%" />
+  <img src="read_assets/screens/5_dark.jpg" width="100%" />
 </p>
 
 ---
 
-<p align="center"><img src="read_assets/plaque_install.png" width="100%" /></p>
+<p align="center"><img src="read_assets/plaque_install.jpg" width="100%" /></p>
 
 1. **Скачайте** `FunPayTools.exe` из [последнего релиза](../../releases/latest).
 2. **Положите** его в любую папку, например `Документы\FunPay Tools`. Установщик не нужен.
@@ -119,18 +119,18 @@
 
 ---
 
-<p align="center"><img src="read_assets/plaque_warning.png" width="100%" /></p>
+<p align="center"><img src="read_assets/plaque_warning.jpg" width="100%" /></p>
 
 > [!WARNING]
 > При первом запуске Windows может показать окно **"Windows защитил ваш компьютер"**. Это фильтр SmartScreen: он предупреждает о любой новой программе без платного сертификата подписи кода. Вирусов в FunPay Tools нет и не было.
 
-<p align="center"><img src="read_assets/smartscreen.png" width="100%" /></p>
+<p align="center"><img src="read_assets/smartscreen.jpg" width="100%" /></p>
 
 Нажмите **"Подробнее"**, потом **"Выполнить в любом случае"**. Это нужно один раз. Если антивирус ругается, добавьте файл в исключения.
 
 ---
 
-<p align="center"><img src="read_assets/plaque_security.png" width="100%" /></p>
+<p align="center"><img src="read_assets/plaque_security.jpg" width="100%" /></p>
 
 *   🔐 Golden Key и куки лежат только в `%APPDATA%\FunPayTools\desktop.json` на вашем компьютере
 *   🧾 Журнал ошибок в настройках не содержит ключей и паролей, они вырезаются
@@ -138,7 +138,7 @@
 
 ---
 
-<p align="center"><img src="read_assets/plaque_support.png" width="100%" /></p>
+<p align="center"><img src="read_assets/plaque_support.jpg" width="100%" /></p>
 
 <div align="center">
 
