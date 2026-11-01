@@ -45,6 +45,8 @@ fn main() {
         shot::run(&spec);
         return;
     }
+    #[cfg(target_os = "linux")]
+    let _ = gtk::init();
     // уже запущены (например, автозапуском): просто показываем то окно
     // после обновления старая копия ещё закрывается: ждём её, а не будим
     if std::env::args().any(|a| a == "--after-update") {
@@ -69,6 +71,14 @@ fn main() {
                     use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
                     return a.with_skip_taskbar(true);
                 }
+                #[cfg(target_os = "linux")]
+                {
+                    use slint::winit_030::winit::platform::wayland::WindowAttributesExtWayland;
+                    use slint::winit_030::winit::platform::x11::WindowAttributesExtX11;
+                    let a = WindowAttributesExtWayland::with_name(a, "funpay-tools-popup", "FunPayToolsPopup");
+                    let a = WindowAttributesExtX11::with_name(a, "funpay-tools-popup", "FunPayToolsPopup");
+                    return WindowAttributesExtX11::with_override_redirect(a, true);
+                }
                 #[allow(unreachable_code)]
                 return a;
             }
@@ -76,6 +86,13 @@ fn main() {
             if std::env::var("FPT_SHADOW").is_ok() {
                 use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
                 return attrs.with_undecorated_shadow(true);
+            }
+            #[cfg(target_os = "linux")]
+            {
+                use slint::winit_030::winit::platform::wayland::WindowAttributesExtWayland;
+                use slint::winit_030::winit::platform::x11::WindowAttributesExtX11;
+                let a = WindowAttributesExtWayland::with_name(attrs, "funpay-tools", "FunPayTools");
+                return WindowAttributesExtX11::with_name(a, "funpay-tools", "FunPayTools");
             }
             #[allow(unreachable_code)]
             attrs
@@ -248,7 +265,7 @@ pub fn setup(app: &AppWindow, cfg: Arc<Mutex<config::Config>>, tx: std::sync::mp
         st.set_webview_ok(browser::available());
         st.set_keep_background(c.keep_background);
         st.set_autostart(c.autostart);
-        st.set_tray_ok(cfg!(windows));
+        st.set_tray_ok(tray::available());
     }
 
     let loader = imgcache::ImgLoader::new(4, |d| {

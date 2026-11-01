@@ -8,7 +8,8 @@
 
 <p align="center">
   <a href="https://t.me/fptools"><img src="https://img.shields.io/badge/Telegram-%40fptools-3A7FD5?style=for-the-badge&logo=telegram&logoColor=white&color=3A7FD5&labelColor=1E2C40" alt=""/></a>
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-v4.4.0-3A7FD5?style=for-the-badge&logo=windows&logoColor=white&color=3A7FD5&labelColor=1E2C40" alt=""/></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-Windows-3A7FD5?style=for-the-badge&logo=windows&logoColor=white&color=3A7FD5&labelColor=1E2C40" alt=""/></a>
+  <a href="https://github.com/SanoSenpay/FunPay-Desktop-Linux/releases"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-Linux-3A7FD5?style=for-the-badge&logo=linux&logoColor=white&color=3A7FD5&labelColor=1E2C40" alt=""/></a>
   <a href="https://discord.gg/c8A9v58CQw"><img src="https://img.shields.io/badge/Discord-FunPay%20Tools-3A7FD5?style=for-the-badge&logo=discord&logoColor=white&color=3A7FD5&labelColor=1E2C40" alt=""/></a>
 </p>
 
@@ -101,6 +102,38 @@
 ---
 
 <p align="center"><img src="read_assets/plaque_install.jpg" width="100%" /></p>
+
+### 🐧 Linux (Arch, Ubuntu, Debian, Fedora, Mint)
+
+#### Способ 1: Установка в одну команду (рекомендуется)
+```bash
+curl -fsSL https://raw.githubusercontent.com/SanoSenpay/FunPay-Desktop-Linux/linux/install.sh | bash
+```
+> Скрипт проверит зависимости, загрузит исполняемый файл в `~/.local/bin/funpay-tools-desktop`, установит иконку и зарегистрирует приложение в системном меню.
+
+#### Способ 2: Портативный .AppImage
+1. Скачайте `FunPay_Tools-x86_64.AppImage` со [страницы релизов](https://github.com/SanoSenpay/FunPay-Desktop-Linux/releases).
+2. Разрешите выполнение и запустите:
+   ```bash
+   chmod +x FunPay_Tools-x86_64.AppImage
+   ./FunPay_Tools-x86_64.AppImage
+   ```
+
+#### Способ 3: Сборка из исходников (Arch Linux / Wayland)
+```bash
+# Необходимые системные пакеты (Arch / Omarchy):
+sudo pacman -S --needed webkit2gtk-4.1 gtk3 libayatana-appindicator pipewire
+
+# Клонирование и запуск:
+git clone -b linux https://github.com/SanoSenpay/FunPay-Desktop-Linux.git
+cd FunPay-Desktop-Linux
+cargo build --release
+./target/release/funpay-tools-desktop
+```
+
+---
+
+### 🪟 Windows
 
 1. **Скачайте** `FunPayTools.exe` из [последнего релиза](../../releases/latest).
 2. **Положите** его в любую папку, например `Документы\FunPay Tools`. Установщик не нужен.

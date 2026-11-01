@@ -6,7 +6,7 @@ pub enum Action {
     Quit,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod imp {
     use super::Action;
     use std::cell::RefCell;
@@ -26,6 +26,13 @@ mod imp {
     static LOGO: &[u8] = include_bytes!("../ui/icons/logo64.png");
 
     pub fn init() {
+        #[cfg(target_os = "linux")]
+        {
+            if gtk::init().is_err() {
+                crate::log::write("трей: не удалось инициализировать GTK");
+                return;
+            }
+        }
         let Ok(img) = image::load_from_memory(LOGO) else { return };
         let img = img.resize(32, 32, image::imageops::FilterType::Lanczos3).to_rgba8();
         let (w, h) = (img.width(), img.height());
@@ -51,6 +58,11 @@ mod imp {
     }
 
     pub fn poll() -> Option<Action> {
+        #[cfg(target_os = "linux")]
+        while gtk::events_pending() {
+            gtk::main_iteration_do(false);
+        }
+
         let ids = T.with(|c| c.borrow().as_ref().map(|t| (t.open.clone(), t.quit.clone())))?;
         if let Ok(ev) = MenuEvent::receiver().try_recv() {
             if ev.id == ids.1 {
@@ -74,7 +86,8 @@ mod imp {
         T.with(|c| *c.borrow_mut() = None);
     }
 
-    /// Автозапуск через HKCU\...\Run (как у Telegram): программа стартует в фоне.
+    /// Автозапуск через реестр Windows: программа стартует в фоне.
+    #[cfg(windows)]
     pub fn set_autostart(on: bool) {
         use winreg::enums::*;
         use winreg::RegKey;
@@ -87,9 +100,41 @@ mod imp {
             let _ = key.delete_value("FunPayTools");
         }
     }
+
+    /// Автозапуск на Linux через ~/.config/autostart.
+    #[cfg(target_os = "linux")]
+    pub fn set_autostart(on: bool) {
+        if let Some(base) = directories::BaseDirs::new() {
+            let dir = base.config_dir().join("autostart");
+            let file = dir.join("funpay-tools.desktop");
+            if on {
+                let _ = std::fs::create_dir_all(&dir);
+                if let Ok(exe) = std::env::current_exe() {
+                    let icon = crate::config::dir().join("icon.png");
+                    let content = format!(
+                        "[Desktop Entry]\n\
+                         Type=Application\n\
+                         Name=FunPay Tools\n\
+                         Comment=FunPay Desktop Client\n\
+                         Exec=\"{}\" --background\n\
+                         Icon={}\n\
+                         Terminal=false\n\
+                         Categories=Network;Chat;InstantMessaging;\n\
+                         StartupWMClass=funpay-tools\n\
+                         X-GNOME-Autostart-enabled=true\n",
+                        exe.display(),
+                        icon.display()
+                    );
+                    let _ = std::fs::write(file, content);
+                }
+            } else {
+                let _ = std::fs::remove_file(file);
+            }
+        }
+    }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
     use super::Action;
     pub fn init() {}
@@ -144,5 +189,28 @@ pub fn wait_free(secs: u64) {
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_autostart_toggle() {
+        set_autostart(true);
+        #[cfg(target_os = "linux")]
+        {
+            let base = directories::BaseDirs::new().unwrap();
+            let p = base.config_dir().join("autostart/funpay-tools.desktop");
+            assert!(p.exists());
+        }
+        set_autostart(false);
+        #[cfg(target_os = "linux")]
+        {
+            let base = directories::BaseDirs::new().unwrap();
+            let p = base.config_dir().join("autostart/funpay-tools.desktop");
+            assert!(!p.exists());
+        }
     }
 }

@@ -25,6 +25,9 @@ once_cell = "1"
 base64 = "0.22"
 sha2 = "0.10"
 semver = "1"
+rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-mp3"] }
+tray-icon = { version = "0.21", default-features = false }
+wry = { version = "0.57", default-features = false, features = ["os-webview"] }
 
 [build-dependencies]
 slint-build = "1.18"
@@ -38,10 +41,10 @@ strip = true
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
-wry = { version = "0.57", default-features = false, features = ["os-webview"] }
 tauri-winrt-notification = "0.8"
-rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-mp3"] }
-tray-icon = { version = "0.21", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", default-features = false }
 
 [patch.crates-io]
 # Исправление деления на ноль при частоте монитора 0 Гц (RDP, виртуальные машины)

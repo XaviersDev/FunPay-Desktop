@@ -529,7 +529,7 @@ export component SettingsView inherits Rectangle {
                     if St.notifications: SettingRow {
                         icon: @image-url("icons/tune.svg");
                         title: "Вид уведомлений";
-                        hint: St.pop-custom ? "Свои окна, " + (St.pop-corner == 0 ? "слева сверху" : St.pop-corner == 1 ? "справа сверху" : St.pop-corner == 2 ? "слева снизу" : "справа снизу") + ", до " + St.pop-count : "Уведомления Windows";
+                        hint: St.pop-custom ? "Свои окна, " + (St.pop-corner == 0 ? "слева сверху" : St.pop-corner == 1 ? "справа сверху" : St.pop-corner == 2 ? "слева снизу" : "справа снизу") + ", до " + St.pop-count : "Системные уведомления Linux";
                         has-toggle: false;
                         clicked => { St.notes-open = true; }
                     }
@@ -549,7 +549,7 @@ export component SettingsView inherits Rectangle {
                     }
                     if St.tray-ok: SettingRow {
                         icon: @image-url("icons/login.svg");
-                        title: "Запускать вместе с Windows";
+                        title: "Запускать вместе с системой";
                         hint: "Сразу в фоне, окно не открывается";
                         checked: St.autostart;
                         toggled(v) => { St.autostart = v; Api.set-autostart(v); }
@@ -633,10 +633,36 @@ export component SettingsView inherits Rectangle {
                     }
                     Contacts { }
                     Text {
-                        text: "FunPay Tools для Windows " + St.version;
+                        text: "FunPay Tools для Linux " + St.version;
                         color: Theme.faint;
                         font-size: 12px;
                         horizontal-alignment: center;
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        Text {
+                            text: "Modified by";
+                            color: Theme.faint;
+                            font-size: 11.5px;
+                            vertical-alignment: center;
+                        }
+                        Rectangle {
+                            width: auth-link.preferred-width;
+                            height: auth-link.preferred-height;
+                            auth-link := Text {
+                                text: "SanoSenpay";
+                                color: auth-ta.has-hover ? Theme.accent : Theme.muted;
+                                font-size: 11.5px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                                animate color { duration: 100ms; }
+                            }
+                            auth-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Api.open-external("https://github.com/SanoSenpay"); }
+                            }
+                        }
                     }
                     Rectangle { height: 16px; }
                 }

@@ -782,7 +782,7 @@ impl Ui {
                         let v = ver.clone();
                         post(move |u| u.st(|s| s.set_upd_status(format!("Скачиваю версию {v}: {p}%").into())).unwrap_or(()));
                     });
-                    let res = dl.and_then(|p| if cfg!(windows) { crate::update::install(&p) } else { Ok(p) });
+                    let res = dl.and_then(|p| crate::update::install(&p));
                     post(move |u| u.upd_installed(ver, res));
                 }
                 Ok(crate::update::Check::UpToDate) => post(move |u| {
@@ -846,10 +846,6 @@ impl Ui {
 
     pub fn upd_restart(&mut self, background: bool) {
         let Some(exe) = self.ext.upd_exe.clone() else { return };
-        if !cfg!(windows) {
-            self.toast("Перезапуск после обновления работает только в Windows");
-            return;
-        }
         crate::update::relaunch(&exe, background);
         crate::popup::close_all();
         crate::tray::remove();
