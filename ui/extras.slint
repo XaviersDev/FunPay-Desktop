@@ -151,7 +151,7 @@ export component NotesDialog inherits Card {
             Row {
                 tw: root.tw;
                 title: "Свои окна уведомлений";
-                hint: "Аккуратные карточки в углу экрана. Если выключить, будут обычные уведомления Windows.";
+                hint: "Аккуратные карточки в углу экрана. Если выключить, будут обычные системные уведомления.";
                 checked: St.pop-custom;
                 toggled(v) => { St.pop-custom = v; Api.pop-set("custom", v ? 1 : 0); }
             }
