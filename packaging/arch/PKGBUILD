@@ -1,0 +1,29 @@
+# Maintainer: sanosenpay
+pkgname=funpay-tools-desktop-bin
+pkgver=4.4.0
+pkgrel=1
+pkgdesc="Десктопный клиент и утилиты для FunPay (Linux)"
+arch=('x86_64')
+url="https://github.com/XaviersDev/FunPay-Desktop"
+license=('MIT')
+depends=(
+    'webkit2gtk-4.1'
+    'gtk3'
+    'libayatana-appindicator'
+    'alsa-lib'
+    'hicolor-icon-theme'
+)
+provides=('funpay-tools-desktop')
+conflicts=('funpay-tools-desktop')
+source=(
+    "${pkgname}-${pkgver}.tar.gz::${url}/releases/download/v${pkgver}/funpay-tools-desktop-linux-x86_64.tar.gz"
+    "funpay-tools.desktop"
+    "icon.png::https://raw.githubusercontent.com/XaviersDev/FunPay-Desktop/main/ui/icons/logo256.png"
+)
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package() {
+    install -Dm755 "${srcdir}/funpay-tools-desktop" "${pkgdir}/usr/bin/funpay-tools-desktop"
+    install -Dm644 "${srcdir}/funpay-tools.desktop" "${pkgdir}/usr/share/applications/funpay-tools.desktop"
+    install -Dm644 "${srcdir}/icon.png" "${pkgdir}/usr/share/icons/hicolor/256x256/apps/funpay-tools.png"
+}
