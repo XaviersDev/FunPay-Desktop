@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # FunPay Tools - скрипт установки в 1 команду
-# Использование: curl -fsSL https://raw.githubusercontent.com/<REPO>/main/install.sh | bash
+# Использование: curl -fsSL https://raw.githubusercontent.com/SanoSenpay/FunPay-Desktop-Linux/linux/install.sh | bash
 
-REPO="${GITHUB_REPO:-XaviersDev/FunPay-Desktop}"
+REPO="${GITHUB_REPO:-SanoSenpay/FunPay-Desktop-Linux}"
 BIN_NAME="funpay-tools-desktop"
 
 echo "=============================================="
