@@ -2,7 +2,7 @@
 //! с куками аккаунта. Используется для входа и для ссылок FunPay.
 //! На других системах ссылки открываются во внешнем браузере.
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod imp {
     use crate::ui::post;
     use crate::AppWindow;
@@ -16,7 +16,7 @@ mod imp {
         wv: WebView,
     }
 
-    /// Один профиль WebView2 (общие куки) и по вкладке на страницу.
+    /// Один профиль браузера (общие куки) и по вкладке на страницу.
     struct Browser {
         ctx: WebContext,
         views: Vec<View>,
@@ -29,9 +29,11 @@ mod imp {
         static B: RefCell<Option<Browser>> = const { RefCell::new(None) };
     }
 
+    #[cfg(windows)]
     static LOADER: &[u8] = include_bytes!("../patches/webview2-com-sys-0.39.1/x64/WebView2Loader.dll");
 
     /// Кладём WebView2Loader.dll в папку приложения и загружаем по полному пути.
+    #[cfg(windows)]
     fn ensure_loader() -> bool {
         #[link(name = "kernel32")]
         extern "system" {
@@ -46,7 +48,16 @@ mod imp {
         unsafe { LoadLibraryW(w.as_ptr()) != 0 }
     }
 
+    #[cfg(not(windows))]
+    fn ensure_loader() -> bool {
+        true
+    }
+
+    #[cfg(windows)]
     const NO_WV2: &str = "Не получилось открыть браузер: на компьютере нет Microsoft Edge WebView2. Установите его с сайта Microsoft или войдите другим способом.";
+
+    #[cfg(not(windows))]
+    const NO_WV2: &str = "Не получилось открыть браузер: в системе не найден WebKitGTK. Установите webkit2gtk-4.1 или войдите по Golden Key.";
 
     fn new_view(app: &AppWindow, ctx: &mut WebContext, id: i32) -> Result<WebView, String> {
         use slint::winit_030::WinitWindowAccessor;
@@ -91,7 +102,10 @@ mod imp {
             if !ensure_loader() {
                 return Err(NO_WV2.into());
             }
+            #[cfg(windows)]
             let ctx = WebContext::new(Some(crate::config::dir().join("WebView2")));
+            #[cfg(not(windows))]
+            let ctx = WebContext::new(Some(crate::config::dir().join("WebKit")));
             B.with(|b| *b.borrow_mut() = Some(Browser { ctx, views: Vec::new(), active: -1, rect: (0.0, 0.0, 0.0, 0.0), visible: false }));
         }
         let has = B.with(|b| b.borrow().as_ref().map(|br| br.views.iter().any(|v| v.id == id)).unwrap_or(false));
@@ -102,7 +116,7 @@ mod imp {
                 new_view(app, &mut br.ctx, id)
             });
             let wv = res.map_err(|e| {
-                crate::log::write(&format!("webview2: {e}"));
+                crate::log::write(&format!("webview: {e}"));
                 NO_WV2.to_string()
             })?;
             B.with(|b| b.borrow_mut().as_mut().unwrap().views.push(View { id, wv }));
@@ -300,14 +314,15 @@ mod imp {
         });
     }
 
-    /// Проверяем, установлен ли WebView2 Runtime. Способ из документации Microsoft:
-    /// запись EdgeUpdate с непустым полем pv. Иначе встроенный браузер не поднимется.
+    /// Проверяем, доступен ли встроенный веб-движок.
+    #[cfg(windows)]
     pub fn available() -> bool {
         use once_cell::sync::OnceCell;
         static CACHE: OnceCell<bool> = OnceCell::new();
         *CACHE.get_or_init(webview2_installed)
     }
 
+    #[cfg(windows)]
     fn webview2_installed() -> bool {
         use winreg::enums::*;
         use winreg::RegKey;
@@ -329,9 +344,14 @@ mod imp {
         }
         false
     }
+
+    #[cfg(target_os = "linux")]
+    pub fn available() -> bool {
+        true
+    }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
     use crate::AppWindow;
     pub fn open(_app: &AppWindow, url: &str, _cookies: &[(String, String)]) -> Result<(), String> {

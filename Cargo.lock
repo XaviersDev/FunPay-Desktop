@@ -1848,6 +1848,7 @@ dependencies = [
  "directories",
  "embed-resource",
  "gif",
+ "gtk",
  "image",
  "notify-rust",
  "once_cell",
