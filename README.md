@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://t.me/fptools"><img src="https://img.shields.io/badge/Telegram-%40fptools-3A7FD5?style=for-the-badge&logo=telegram&logoColor=white&color=3A7FD5&labelColor=1E2C40" alt=""/></a>
-  <a href="../../releases/latest"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-v4.3.9-3A7FD5?style=for-the-badge&logo=windows&logoColor=white&color=3A7FD5&labelColor=1E2C40" alt=""/></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-v4.4.0-3A7FD5?style=for-the-badge&logo=windows&logoColor=white&color=3A7FD5&labelColor=1E2C40" alt=""/></a>
   <a href="https://discord.gg/c8A9v58CQw"><img src="https://img.shields.io/badge/Discord-FunPay%20Tools-3A7FD5?style=for-the-badge&logo=discord&logoColor=white&color=3A7FD5&labelColor=1E2C40" alt=""/></a>
 </p>
 
