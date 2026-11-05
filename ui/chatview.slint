@@ -697,8 +697,12 @@ export component ChatPane inherits Rectangle {
     // Вставляет строку на место курсора (или вместо выделения).
     function insert-at-cursor(s: string) {
         if (s == "") { return; }
-        input.text = input.text + s;
-        input.set-selection-offsets(100000, 100000);
+        let a = input.anchor-position-byte-offset;
+        let b = input.cursor-position-byte-offset;
+        let end = Api.insert-end(input.text, a, b, s);
+        input.text = Api.insert-range(input.text, a, b, s);
+        input.focus();
+        input.set-selection-offsets(end, end);
     }
 
     background: Theme.panel;
@@ -1250,6 +1254,7 @@ export component ChatPane inherits Rectangle {
                         }
                         fl := Flickable {
                             y: (parent.height - self.height) / 2;
+                            interactive: false;
                             width: parent.width;
                             height: min(max(22px, input.preferred-height), 150px);
                             content-height: max(self.height, input.preferred-height);

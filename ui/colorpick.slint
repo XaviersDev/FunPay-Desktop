@@ -1,0 +1,139 @@
+// Выбор любого цвета: квадрат насыщенности и яркости, полоса оттенка, поля R G B.
+import { Theme } from "theme.slint";
+import { Api } from "globals.slint";
+
+component NumBox inherits Rectangle {
+    in property <int> value;
+    in property <string> label;
+    callback changed-to(int);
+    height: 52px;
+    VerticalLayout {
+        spacing: 3px;
+        Rectangle {
+            height: 32px;
+            border-radius: 7px;
+            border-width: 1px;
+            border-color: ni.has-focus ? Theme.accent : Theme.line;
+            background: Theme.panel;
+            ni := TextInput {
+                x: 8px;
+                width: parent.width - 16px;
+                text: root.value;
+                font-size: 13.5px;
+                color: Theme.ink;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                single-line: true;
+                input-type: number;
+                edited => {
+                    if (self.text.is-float()) {
+                        root.changed-to(max(0, min(255, round(self.text.to-float()))));
+                    }
+                }
+            }
+        }
+        Text { text: root.label; color: Theme.muted; font-size: 11.5px; horizontal-alignment: center; }
+    }
+}
+
+export component ColorPick inherits VerticalLayout {
+    // цвет как #RRGGBB, пусто: цвет по умолчанию
+    in-out property <string> hex;
+    property <float> h: 210;
+    property <float> s: 0.7;
+    property <float> v: 0.85;
+    property <color> cur: hsv(root.h, root.s, root.v);
+    property <length> sq-h: 150px;
+
+    public function load() {
+        let c = Api.hex-color(root.hex);
+        let x = c.to-hsv();
+        if (x.saturation > 0.001) { root.h = x.hue; }
+        root.s = x.saturation;
+        root.v = x.value;
+    }
+    function push() {
+        root.hex = Api.rgb-hex(root.cur.red, root.cur.green, root.cur.blue);
+    }
+    function set-rgb(r: int, g: int, b: int) {
+        root.hex = Api.rgb-hex(r, g, b);
+        root.load();
+    }
+
+    spacing: 10px;
+    init => { if (root.hex != "") { root.load(); } }
+
+    // насыщенность по горизонтали, яркость по вертикали
+    sq := Rectangle {
+        height: root.sq-h;
+        border-radius: 8px;
+        clip: true;
+        background: @linear-gradient(90deg, #ffffff 0%, hsv(root.h, 1, 1) 100%);
+        Rectangle { background: @linear-gradient(180deg, #00000000 0%, #000000 100%); }
+        Rectangle {
+            x: root.s * parent.width - 7px;
+            y: (1 - root.v) * parent.height - 7px;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            border-width: 2px;
+            border-color: white;
+            background: root.cur;
+        }
+        sa := TouchArea {
+            mouse-cursor: crosshair;
+            function at() {
+                root.s = max(0, min(1, self.mouse-x / self.width));
+                root.v = max(0, min(1, 1 - self.mouse-y / self.height));
+                root.push();
+            }
+            pointer-event(e) => { if (e.kind == PointerEventKind.down) { self.at(); } }
+            moved => { if (self.pressed) { self.at(); } }
+        }
+    }
+    HorizontalLayout {
+        spacing: 12px;
+        Rectangle {
+            width: 34px;
+            height: 34px;
+            border-radius: 17px;
+            background: root.cur;
+            border-width: 1px;
+            border-color: Theme.line;
+        }
+        // оттенок
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 14px;
+                border-radius: 7px;
+                background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.6%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.6%, #ff00ff 83.3%, #ff0000 100%);
+                Rectangle {
+                    x: root.h / 360 * parent.width - 8px;
+                    y: -1px;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 8px;
+                    border-width: 2px;
+                    border-color: white;
+                    background: hsv(root.h, 1, 1);
+                }
+                ha := TouchArea {
+                    mouse-cursor: pointer;
+                    function at() {
+                        root.h = max(0, min(359.9, self.mouse-x / self.width * 360));
+                        root.push();
+                    }
+                    pointer-event(e) => { if (e.kind == PointerEventKind.down) { self.at(); } }
+                    moved => { if (self.pressed) { self.at(); } }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        NumBox { label: "R"; value: root.cur.red; changed-to(x) => { root.set-rgb(x, root.cur.green, root.cur.blue); } }
+        NumBox { label: "G"; value: root.cur.green; changed-to(x) => { root.set-rgb(root.cur.red, x, root.cur.blue); } }
+        NumBox { label: "B"; value: root.cur.blue; changed-to(x) => { root.set-rgb(root.cur.red, root.cur.green, x); } }
+    }
+}

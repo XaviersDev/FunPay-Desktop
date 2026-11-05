@@ -3,6 +3,7 @@ import { Theme } from "theme.slint";
 import { St, Api } from "globals.slint";
 import { TplRow, AutoRow } from "types.slint";
 import { IconButton, Toggle, PrimaryButton, Dim, MenuCard, TourMark } from "widgets.slint";
+import { ColorPick } from "colorpick.slint";
 
 // ============================================================ поле ввода с буфером обмена
 
@@ -20,10 +21,14 @@ export component Field inherits Rectangle {
     border-color: Theme.accent;
     public function focus-it() { ti.focus(); }
     public function insert(s: string) {
-        ti.text = ti.text + s;
+        if (s == "") { return; }
+        let a = ti.anchor-position-byte-offset;
+        let b = ti.cursor-position-byte-offset;
+        let end = Api.insert-end(ti.text, a, b, s);
+        ti.text = Api.insert-range(ti.text, a, b, s);
         root.text = ti.text;
         ti.focus();
-        ti.set-selection-offsets(100000, 100000);
+        ti.set-selection-offsets(end, end);
         root.edited();
     }
     FocusScope {
@@ -61,6 +66,8 @@ export component Field inherits Rectangle {
         fl := Flickable {
             width: parent.width;
             height: parent.height;
+            // без перетаскивания: иначе клик доходит до поля с задержкой и выделяет текст
+            interactive: false;
             content-height: max(self.height, ti.preferred-height);
             ti := TextInput {
                 width: parent.width;
@@ -74,6 +81,15 @@ export component Field inherits Rectangle {
                 selection-background-color: Theme.accent-soft;
                 selection-foreground-color: Theme.ink;
                 edited => { root.edited(); }
+                // длинный текст сам прокручивается к курсору
+                cursor-position-changed(p) => {
+                    if (p.y + fl.viewport-y > fl.height - 20px) {
+                        fl.viewport-y = fl.height - 20px - p.y;
+                    }
+                    if (p.y + fl.viewport-y < 0) {
+                        fl.viewport-y = -p.y;
+                    }
+                }
             }
         }
     }
@@ -557,6 +573,20 @@ export component TemplatesDialog inherits Rectangle {
                                 clicked => { St.tpl-e-hex = p.h; }
                             }
                         }
+                        // любой цвет: палитра как в расширении
+                        Rectangle {
+                            width: 26px;
+                            height: 26px;
+                            border-radius: 13px;
+                            background: @conic-gradient(#ff0000 0deg, #ffff00 60deg, #00ff00 120deg, #00ffff 180deg, #0000ff 240deg, #ff00ff 300deg, #ff0000 360deg);
+                            border-width: St.tpl-e-pick ? 3px : 0px;
+                            border-color: Theme.panel;
+                            Image { source: @image-url("icons/add.svg"); width: 14px; colorize: white; }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { St.tpl-e-pick = !St.tpl-e-pick; if (St.tpl-e-pick) { cp.load(); } }
+                            }
+                        }
                         Rectangle { width: 4px; }
                         Field {
                             width: 96px;
@@ -564,6 +594,18 @@ export component TemplatesDialog inherits Rectangle {
                             font-size: 12.5px;
                             text <=> St.tpl-e-hex;
                             placeholder: "#RRGGBB";
+                        }
+                    }
+                    pk := Rectangle {
+                        height: St.tpl-e-pick ? cp.preferred-height + 24px : 0px;
+                        visible: St.tpl-e-pick;
+                        border-radius: 12px;
+                        background: Theme.field;
+                        cp := ColorPick {
+                            x: 12px;
+                            y: 12px;
+                            width: min(parent.width - 24px, 320px);
+                            hex <=> St.tpl-e-hex;
                         }
                     }
                     Label { text: "Картинка (по желанию)"; }

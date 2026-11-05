@@ -314,6 +314,17 @@ XXXXX-BBBBB-22222</textarea></div>
                 s.set_tpl_tab(if name == "tpllook" { 1 } else if name == "autos" { 2 } else { 0 });
             });
         }
+        "tplcolor" => {
+            u.st(|s| {
+                s.set_tpl_open(true);
+                s.set_tpl_tab(0);
+            });
+            u.tpl_edit("t2");
+            u.st(|s| {
+                s.set_tpl_e_hex("#0008FA".into());
+                s.set_tpl_e_pick(true);
+            });
+        }
         "tpledit" => {
             u.st(|s| s.set_tpl_open(true));
             u.tpl_edit("t2");

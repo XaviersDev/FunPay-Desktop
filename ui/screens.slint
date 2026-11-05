@@ -163,7 +163,7 @@ export component LoginView inherits Rectangle {
                     border-color: Theme.accent;
                     property <bool> show: false;
                     function paste() {
-                        gk.text = gk.text + Api.paste-clipboard();
+                        let pv = Api.paste-clipboard(); let pa = gk.anchor-position-byte-offset; let pb = gk.cursor-position-byte-offset; let pe = Api.insert-end(gk.text, pa, pb, pv); gk.text = Api.insert-range(gk.text, pa, pb, pv); gk.set-selection-offsets(pe, pe);
                         gk.focus();
                         gk.set-selection-offsets(100000, 100000);
                     }
@@ -983,7 +983,7 @@ export component DescDialog inherits Rectangle {
                     height: parent.height - 20px;
                     capture-key-pressed(e) => {
                         if (e.modifiers.control && (e.text == "v" || e.text == "V" || e.text == "м" || e.text == "М")) {
-                            dtx.text = dtx.text + Api.paste-clipboard();
+                            let pv = Api.paste-clipboard(); let pa = dtx.anchor-position-byte-offset; let pb = dtx.cursor-position-byte-offset; let pe = Api.insert-end(dtx.text, pa, pb, pv); dtx.text = Api.insert-range(dtx.text, pa, pb, pv); dtx.set-selection-offsets(pe, pe);
                             dtx.set-selection-offsets(100000, 100000);
                             return accept;
                         }
@@ -1362,7 +1362,7 @@ component OrderDialog inherits Rectangle {
                     height: parent.height - 20px;
                     capture-key-pressed(e) => {
                         if (e.modifiers.control && (e.text == "v" || e.text == "V" || e.text == "м" || e.text == "М")) {
-                            txt.text = txt.text + Api.paste-clipboard();
+                            let pv = Api.paste-clipboard(); let pa = txt.anchor-position-byte-offset; let pb = txt.cursor-position-byte-offset; let pe = Api.insert-end(txt.text, pa, pb, pv); txt.text = Api.insert-range(txt.text, pa, pb, pv); txt.set-selection-offsets(pe, pe);
                             txt.set-selection-offsets(100000, 100000);
                             return accept;
                         }

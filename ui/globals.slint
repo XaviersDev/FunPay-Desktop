@@ -238,6 +238,8 @@ export global St {
     in-out property <int> pop-corner: 3;
     in-out property <int> pop-count: 3;
     in-out property <float> pop-volume: 80;
+    // палитра цвета кнопки шаблона открыта
+    in-out property <bool> tpl-e-pick;
     // предпросмотр пака шаблонов: номер пака или -1
     in-out property <int> pack-view: -1;
     in-out property <string> pack-name;
@@ -443,6 +445,10 @@ export global Api {
     // Пустое выделение копирует весь текст.
     callback copy-range(string, int, int);
     callback cut-range(string, int, int) -> string;
+    // вставка строки на место курсора или выделения: новый текст и новое место курсора
+    callback insert-range(string, int, int, string) -> string;
+    callback insert-end(string, int, int, string) -> int;
+    callback rgb-hex(int, int, int) -> string;
     callback load-older();
     callback msg-action(string, string, string);       // key, действие, аргумент
     callback cancel-reply();

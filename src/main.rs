@@ -516,6 +516,23 @@ pub fn setup(app: &AppWindow, cfg: Arc<Mutex<config::Config>>, tx: std::sync::mp
             t
         }
     });
+    api.on_insert_range(|t, a, b, ins| {
+        let (lo, hi) = (a.min(b).max(0) as usize, a.max(b).max(0) as usize);
+        let lo = lo.min(t.len());
+        let hi = hi.min(t.len());
+        if !t.is_char_boundary(lo) || !t.is_char_boundary(hi) {
+            return format!("{t}{ins}").into();
+        }
+        format!("{}{}{}", &t[..lo], ins, &t[hi..]).into()
+    });
+    api.on_insert_end(|t, a, b, ins| {
+        let lo = (a.min(b).max(0) as usize).min(t.len());
+        if !t.is_char_boundary(lo) {
+            return (t.len() + ins.len()) as i32;
+        }
+        (lo + ins.len()) as i32
+    });
+    api.on_rgb_hex(|r, g, b| format!("#{:02X}{:02X}{:02X}", r.clamp(0, 255), g.clamp(0, 255), b.clamp(0, 255)).into());
     api.on_load_older(|| {
         with_ui(|u| u.load_older());
     });
