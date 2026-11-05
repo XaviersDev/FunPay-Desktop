@@ -8,6 +8,7 @@ export component IconButton inherits Rectangle {
     in property <length> icon-size: 22px;
     in property <color> tint: Theme.muted;
     in property <bool> active: false;
+    out property <bool> hovered: ta.has-hover;
     callback clicked();
     width: size;
     height: size;

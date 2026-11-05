@@ -1309,6 +1309,33 @@ export component ChatPane inherits Rectangle {
                         clicked => { Api.stickers-toggle(); }
                     }
                 }
+                // отложенная отправка: видна, когда есть текст или уже что-то запланировано в этом чате
+                if St.cur-kind != 3 && (input.text != "" || St.sched-here > 0): VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 6px;
+                    Rectangle {
+                        width: 38px;
+                        height: 38px;
+                        IconButton {
+                            icon: @image-url("icons/schedule.svg");
+                            icon-size: 22px;
+                            clicked => {
+                                St.tip = "";
+                                Api.open-sched(input.text);
+                                input.text = "";
+                            }
+                        }
+                        if St.sched-here > 0: Rectangle {
+                            x: 22px;
+                            y: 2px;
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 8px;
+                            background: Theme.accent;
+                            Text { text: St.sched-here; color: Theme.on-accent; font-size: 10px; font-weight: 700; }
+                        }
+                    }
+                }
                 // отправка: ПКМ переписывает черновик с ИИ
                 VerticalLayout {
                     alignment: end;

@@ -1,7 +1,7 @@
 import { Palette } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { St, Api } from "globals.slint";
-import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan, LotRow, LotSection, LotFieldRow, ThemeCard, Anim } from "types.slint";
+import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan, LotRow, LotSection, LotFieldRow, ThemeCard, Anim, PluginRow, PUiRow, PCell, CatPlugin, CatPack } from "types.slint";
 import { DealsPane } from "deals.slint";
 import { MiniBrowser, MiniBar } from "mini.slint";
 import { TitleBar } from "widgets.slint";
@@ -11,15 +11,20 @@ import { LoginView, SettingsView, ImageViewer, UserCard, ProfilePane, OrderPane,
 import { TemplatesDialog } from "templates.slint";
 import { EpicDialog, NotesDialog } from "extras.slint";
 import { NotifyWindow } from "notify.slint";
+import { WidgetWindow } from "widget.slint";
+import { ProxyDialog, WidgetsDialog, DiscordDialog } from "desk.slint";
+import { StatsDialog, TxnDialog } from "stats.slint";
+import { SchedDialog, DndDialog } from "later.slint";
 import { Tour } from "tour.slint";
 import { LotsPane, LotEditor } from "lots.slint";
+import { PluginsDrawer, PluginDialog, PluginAsk, CatalogDialog } from "plugins.slint";
 import { ThemesDialog } from "themes.slint";
 import "../assets/fonts/Onest-Regular.ttf";
 import "../assets/fonts/Onest-Medium.ttf";
 import "../assets/fonts/Onest-SemiBold.ttf";
 import "../assets/fonts/Onest-Bold.ttf";
 
-export { Theme, St, Api, Anim, LotSection, ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan, LotRow, LotFieldRow, ThemeCard, NotifyWindow }
+export { Theme, St, Api, Anim, LotSection, ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan, LotRow, LotFieldRow, ThemeCard, NotifyWindow, WidgetWindow }
 
 component Edge inherits TouchArea {
     in property <int> dir;
@@ -68,7 +73,7 @@ export component AppWindow inherits Window {
     out property <length> browser-y: St.browser-login ? top + 44px : top + mini-y + 44px;
     out property <length> browser-w: St.browser-login ? root.width : mini-w;
     out property <length> browser-h: St.browser-login ? root.height - top - 44px : mini-h - 44px;
-    out property <bool> overlay-open: St.settings-open || St.card-open || St.viewer-open || St.sendbox-open || St.folder-dialog-open || St.od-dialog != 0 || St.desc-open || St.tpl-open || St.epic-open || St.notes-open || St.lot-open || St.themes-open;
+    out property <bool> overlay-open: St.settings-open || St.card-open || St.viewer-open || St.sendbox-open || St.folder-dialog-open || St.od-dialog != 0 || St.desc-open || St.tpl-open || St.epic-open || St.notes-open || St.lot-open || St.themes-open || St.plugins-open || St.plugin-id != "" || St.cat-open || St.plugin-ask != "" || St.proxy-open || St.widgets-open || St.rpc-open || St.stats-open || St.txn-open || St.sched-open || St.dnd-open;
 
     property <length> wh: root.height;
     changed wh => { St.win-h = self.wh; }
@@ -99,6 +104,28 @@ export component AppWindow inherits Window {
                     Api.sendbox-cancel();
                 } else if (St.card-open) {
                     St.card-open = false;
+                } else if (St.plugin-ask != "") {
+                    Api.plugin-ask-answer(0);
+                } else if (St.proxy-open) {
+                    St.proxy-open = false;
+                } else if (St.sched-open) {
+                    St.sched-open = false;
+                } else if (St.dnd-open) {
+                    St.dnd-open = false;
+                } else if (St.txn-open) {
+                    St.txn-open = false;
+                } else if (St.stats-open) {
+                    St.stats-open = false;
+                } else if (St.widgets-open) {
+                    St.widgets-open = false;
+                } else if (St.rpc-open) {
+                    St.rpc-open = false;
+                } else if (St.cat-open) {
+                    St.cat-open = false;
+                } else if (St.plugin-id != "") {
+                    Api.plugin-close();
+                } else if (St.plugins-open) {
+                    St.plugins-open = false;
                 } else if (St.lot-open) {
                     St.lot-open = false;
                 } else if (St.themes-open) {
@@ -237,6 +264,17 @@ export component AppWindow inherits Window {
         if St.tpl-open: TemplatesDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
         if St.epic-open: EpicDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
         if St.notes-open: NotesDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.plugins-open && St.logged-in: PluginsDrawer { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.plugin-id != "": PluginDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.cat-open: CatalogDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.proxy-open: ProxyDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.sched-open: SchedDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.dnd-open: DndDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.stats-open: StatsDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.txn-open: TxnDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.widgets-open: WidgetsDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.rpc-open: DiscordDialog { y: root.top; width: parent.width; height: parent.height - root.top; }
+        if St.plugin-ask != "": PluginAsk { y: root.top; width: parent.width; height: parent.height - root.top; }
         if St.viewer-open: ImageViewer { y: root.top; width: parent.width; height: parent.height - root.top; }
         // подсказка над кнопкой (шаблоны, отправка)
         if St.tip != "": Rectangle {

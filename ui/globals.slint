@@ -1,4 +1,4 @@
-import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LotRow, LotSection, LotFieldRow, ThemeCard, Anim } from "types.slint";
+import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, StatTile, SchedRow, PackItem, TplRow, AutoRow, LotRow, LotSection, LotFieldRow, ThemeCard, Anim, PluginRow, PUiRow, PCell, CatPlugin, CatPack } from "types.slint";
 
 export global St {
     in-out property <string> version;
@@ -237,6 +237,67 @@ export global St {
     in-out property <bool> pop-custom: true;
     in-out property <int> pop-corner: 3;
     in-out property <int> pop-count: 3;
+    in-out property <float> pop-volume: 80;
+    // предпросмотр пака шаблонов: номер пака или -1
+    in-out property <int> pack-view: -1;
+    in-out property <string> pack-name;
+    in-out property <string> pack-author;
+    in-out property <[PackItem]> pack-items;
+    in-out property <int> pack-count;
+    // отложенные сообщения
+    in-out property <bool> sched-open;
+    in-out property <string> sched-draft;
+    in-out property <[SchedRow]> sched-list;
+    in-out property <int> sched-here;
+    in-out property <int> sched-day;
+    in-out property <string> sched-time;
+    in-out property <string> sched-error;
+    // не беспокоить
+    in-out property <bool> dnd-open;
+    in-out property <bool> dnd-on;
+    in-out property <bool> dnd-active;
+    in-out property <bool> dnd-schedule;
+    in-out property <int> dnd-from: 23;
+    in-out property <int> dnd-to: 9;
+    in-out property <bool> dnd-reply;
+    in-out property <string> dnd-text;
+    // статистика продаж
+    in-out property <bool> stats-open;
+    in-out property <int> stats-period: 2;
+    in-out property <bool> stats-loading;
+    in-out property <string> stats-note;
+    in-out property <[StatTile]> stats-tiles;
+    // подробности операции
+    in-out property <bool> txn-open;
+    in-out property <bool> txn-loading;
+    in-out property <string> txn-title;
+    in-out property <[KV]> txn-rows;
+    in-out property <string> txn-link;
+    in-out property <string> txn-error;
+    // прокси аккаунта
+    in-out property <bool> proxy-open;
+    in-out property <string> proxy-acc;
+    in-out property <string> proxy-name;
+    in-out property <int> proxy-kind;
+    in-out property <string> proxy-addr;
+    in-out property <bool> proxy-strict;
+    in-out property <string> proxy-status;
+    // 0 ничего, 1 проверяю, 2 работает, 3 ошибка
+    in-out property <int> proxy-state;
+    // виджеты и Discord
+    in-out property <bool> widgets-open;
+    in-out property <bool> rpc-open;
+    // вид виджетов: 0 компактный, 1 обычный, 2 крупный; тема 0 как в программе, 1 светлая, 2 тёмная; фон 0..100
+    in-out property <int> wg-size: 1;
+    in-out property <int> wg-theme;
+    in-out property <float> wg-opacity: 92;
+    in-out property <[bool]> widget-on: [false, false, false, false];
+    in-out property <bool> widgets-top;
+    in-out property <bool> wg-editing;
+    in-out property <bool> rpc-on;
+    in-out property <bool> rpc-nick;
+    in-out property <bool> rpc-sales;
+    in-out property <string> rpc-status;
     in-out property <bool> pop-icon: true;
     in-out property <bool> pop-name: true;
     in-out property <bool> pop-text: true;
@@ -260,6 +321,29 @@ export global St {
     in-out property <string> lot-status;
     in-out property <string> lot-currency;
     in-out property <[LotSection]> lot-sections;
+    // плагины
+    in-out property <bool> plugins-open;
+    in-out property <[PluginRow]> plugins;
+    in-out property <string> plugin-id;              // открытые настройки плагина
+    in-out property <string> plugin-name;
+    in-out property <string> plugin-author;
+    in-out property <string> plugin-version;
+    in-out property <string> plugin-desc;
+    in-out property <bool> plugin-on;
+    in-out property <bool> plugin-builtin;
+    in-out property <[PUiRow]> plugin-ui;
+    in-out property <string> plugin-logs;
+    in-out property <bool> plugin-logs-open;
+    in-out property <string> plugin-ask;             // вопрос о разрешении
+    in-out property <string> plugin-ask-name;
+    in-out property <bool> plugin-del;
+    // каталог
+    in-out property <bool> cat-open;
+    in-out property <int> cat-tab;                   // 0 плагины, 1 текстовые шаблоны
+    in-out property <[CatPlugin]> cat-plugins;
+    in-out property <[CatPack]> cat-packs;
+    in-out property <bool> cat-loading;
+    in-out property <string> cat-error;
     in-out property <int> lots-filter;           // 0 все, 1 активные, 2 выключенные
     in-out property <int> lots-on;
     in-out property <int> lots-off;
@@ -449,6 +533,28 @@ export global Api {
     // уведомления
     callback pop-set(string, int);
     callback pop-test();
+    callback pop-sound();
+    callback pack-open(int);
+    callback pack-item-set(int, int, string);
+    callback pack-item-toggle(int, bool);
+    callback pack-apply();
+    callback open-sched(string);
+    callback sched-add(int);
+    callback sched-cancel(string);
+    callback sched-now(string);
+    callback dnd-set(string, int);
+    callback dnd-text-set(string);
+    callback open-stats();
+    callback stats-period-set(int);
+    callback open-txn(string);
+    callback open-proxy(string);
+    callback proxy-check();
+    callback proxy-save();
+    callback proxy-clear();
+    callback widget-toggle(int, bool);
+    callback desk-set(string, bool);
+    callback wg-style(string, int);
+    callback widgets-reset();
     // обновления
     callback set-auto-update(bool);
     callback upd-check();
@@ -459,6 +565,20 @@ export global Api {
     callback lots-refresh();
     callback lots-search(string);
     callback lots-filter-set(int);
+    callback open-plugins();
+    callback plugin-toggle(string, bool);
+    callback plugin-open(string);
+    callback plugin-close();
+    callback plugin-ui-click(string);
+    callback plugin-ui-set(string, string, string);
+    callback plugin-install-file();
+    callback plugin-delete();
+    callback plugin-docs();
+    callback plugin-ask-answer(int);
+    callback open-catalog(int);
+    callback cat-install(int);
+    callback cat-pack-flag(int, int, bool);
+    callback cat-pack-add(int);
     callback lot-lang-set(int);
     callback lot-edit(string);
     callback lot-toggle(string, bool);

@@ -2,6 +2,7 @@
 
 const URL: &str = "https://fptools.onrender.com/api/ai";
 
+#[derive(Default)]
 pub struct Ctx {
     pub history: String,
     pub username: String,
@@ -44,9 +45,18 @@ pub fn rewrite(text: &str, c: &Ctx) -> Result<String, String> {
 ПЕРЕПИШИ МОЙ ЧЕРНОВИК, СТРОГО СЛЕДУЯ ВСЕМ ПРАВИЛАМ.\n\
 ГОТОВЫЙ ТЕКСТ:"
     );
+    request("You are a text editing model. Follow user instructions precisely.", &prompt)
+}
+
+/// Свободный вопрос к ИИ (для плагинов).
+pub fn ask(prompt: &str) -> Result<String, String> {
+    request("You are a helpful assistant for a FunPay marketplace seller. Answer in the language of the question.", prompt)
+}
+
+fn request(system: &str, prompt: &str) -> Result<String, String> {
     let body = serde_json::json!({
         "messages": [
-            { "role": "system", "content": "You are a text editing model. Follow user instructions precisely." },
+            { "role": "system", "content": system },
             { "role": "user", "content": prompt }
         ],
         "modelName": "ChatGPT 4o",

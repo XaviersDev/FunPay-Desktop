@@ -98,7 +98,7 @@ pub fn fill(scene: &str) {
             let mut c = u.cfg.lock().unwrap();
             c.accounts = vec![
                 crate::config::SavedAccount { id: "1".into(), name: "XaviersDev".into(), ..Default::default() },
-                crate::config::SavedAccount { id: "2".into(), name: "keys_store24".into(), ..Default::default() },
+                crate::config::SavedAccount { id: "2".into(), name: "keys_store24".into(), proxy: "socks5h://user:pass@185.22.14.7:1080".into(), proxy_strict: true, ..Default::default() },
             ];
         }
         u.rebuild_accounts();
@@ -359,6 +359,55 @@ XXXXX-BBBBB-22222</textarea></div>
             u.sendbox_add(paths);
         }
         "reply" => u.msg_action("6".into(), "reply".into()),
+        "plugins" | "plugin" | "pluginoff" | "catalog" | "packs" | "proxy" | "desk" | "discord" | "tplcat" => u.demo_desk(name),
+        "sched" => {
+            {
+                let mut c = u.cfg.lock().unwrap();
+                c.scheduled = vec![crate::config::Scheduled {
+                    id: "s1".into(),
+                    chat: u.cur.as_ref().map(|c| c.id.clone()).unwrap_or_default(),
+                    name: "darkness21".into(),
+                    text: "Доброе утро! Ключ уже в чате выше, проверьте, пожалуйста".into(),
+                    at: chrono::Utc::now().timestamp() + 3600 * 14,
+                    ..Default::default()
+                }];
+            }
+            u.open_sched("Скину вторую часть заказа вечером, как вернусь".into());
+        }
+        "dnd" => {
+            {
+                let mut c = u.cfg.lock().unwrap();
+                c.dnd.schedule = true;
+                c.dnd.reply = true;
+            }
+            u.sync_dnd();
+            u.st(|s| s.set_dnd_open(true));
+        }
+        "stats" => {
+            u.open_deals(0);
+            u.open_stats();
+            let st = crate::money::SalesStats {
+                orders: 43, earned: "2\u{a0}213,82\u{a0}₽".into(), avg: "55,35\u{a0}₽".into(), closed: 38, pending: 2,
+                pending_sum: "1\u{a0}068\u{a0}₽".into(), refunds: 3, buyers: 39, top_buyer: "prodawez2".into(),
+                max_sale: "1\u{a0}062,82\u{a0}₽".into(), top_item: "3 готовых шаблона для общения, автовыдача 24/7".into(), top_game: "Discord, Серверы".into(),
+            };
+            u.show_stats(&st, "");
+        }
+        "txn" => {
+            u.open_deals(2);
+            u.open_txn("29197273".into());
+            let gen = u.ext.txn_gen;
+            u.txn_loaded(gen, Ok(("Вывод денег #29197273".into(), vec![
+                ("Дата операции".into(), "9 октября, 0:17:40 (3 недели назад)".into()),
+                ("Описание".into(), "Вывод денег #29197273".into()),
+                ("Сумма".into(), "− 38 000 ₽".into()),
+                ("Статус операции".into(), "Завершено".into()),
+                ("Номер вывода".into(), "29197273".into()),
+                ("Получатель".into(), "TYN1cfiPhrSjDTCCrr2pf34yTjs4G2j88v".into()),
+                ("К получению".into(), "407.87 USDT".into()),
+                ("Внешняя транзакция".into(), "104148b2e2fea7d427a6652cb9dc1f0a815b8ba82072a02455ef706597720fb5".into()),
+            ], "https://tronscan.org/".into())));
+        }
         "mydesc" | "descedit" => {
             let banner = std::env::temp_dir().join("fpt_demo_banner.png");
             let img = image::RgbImage::from_fn(900, 300, |x, y| {

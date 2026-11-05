@@ -143,6 +143,29 @@ export component Rail inherits Rectangle {
                         clicked => { St.settings-open = false; Api.open-lots(); }
                     }
                 }
+                // плагины: меню выезжает слева, как настройки
+                Rectangle {
+                    height: 62px;
+                    background: St.plugins-open ? Theme.rail-on : pta.has-hover ? #ffffff0d : transparent;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("icons/extension.svg");
+                                width: 25px;
+                                height: 25px;
+                                colorize: St.plugins-open ? white : Theme.rail-tx;
+                            }
+                        }
+                        Text { text: "Плагины"; color: St.plugins-open ? white : Theme.rail-tx; font-size: 11px; font-weight: 550; horizontal-alignment: center; }
+                    }
+                    pta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { St.settings-open = false; Api.open-plugins(); }
+                    }
+                }
             }
         }
         Rectangle { vertical-stretch: 1; }

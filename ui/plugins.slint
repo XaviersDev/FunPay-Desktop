@@ -1,0 +1,707 @@
+import { ScrollView, ComboBox, Slider } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { PluginRow, PUiRow, PCell, CatPlugin, CatPack } from "types.slint";
+import { IconButton, Toggle, PrimaryButton, Dim, Pill } from "widgets.slint";
+import { Field } from "templates.slint";
+
+// ============================================================ меню плагинов (выезжает слева)
+
+// строка плагина: название и тумблер. На фоне вместо курсора шестерёнка, фон чуть голубеет.
+component PluginItem inherits Rectangle {
+    in property <PluginRow> p;
+    height: 48px;
+    border-radius: 10px;
+    background: ta.has-hover ? Theme.accent.with-alpha(0.08) : transparent;
+    animate background { duration: 160ms; easing: ease-out; }
+    ta := TouchArea {
+        mouse-cursor: none;
+        clicked => { Api.plugin-open(p.id); }
+    }
+    Text {
+        x: 14px;
+        width: parent.width - 80px;
+        text: p.name;
+        color: Theme.ink;
+        font-size: 14.5px;
+        font-weight: 550;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+    // шестерёнка там, где курсор
+    if ta.has-hover && ta.mouse-x < root.width - 56px: Image {
+        x: ta.mouse-x - 9px;
+        y: ta.mouse-y - 9px;
+        width: 18px;
+        height: 18px;
+        source: @image-url("icons/settings.svg");
+        colorize: Theme.accent;
+    }
+    Rectangle {
+        x: parent.width - 56px;
+        width: 56px;
+        Toggle {
+            checked: p.on;
+            toggled(v) => { Api.plugin-toggle(p.id, v); }
+        }
+    }
+}
+
+export component PluginsDrawer inherits Rectangle {
+    property <bool> shown;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim { dismiss => { St.plugins-open = false; } }
+    Rectangle {
+        x: root.shown ? 0px : -48px;
+        opacity: root.shown ? 1 : 0;
+        animate x { duration: 200ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        animate opacity { duration: 140ms; easing: ease-out; }
+        width: min(360px, parent.width);
+        height: parent.height;
+        background: Theme.panel;
+        drop-shadow-blur: 30px;
+        drop-shadow-color: Theme.shadow;
+        TouchArea { }
+        VerticalLayout {
+            Rectangle {
+                height: 52px;
+                HorizontalLayout {
+                    padding-left: 20px;
+                    padding-right: 8px;
+                    Text { text: "Плагины"; font-size: 17px; font-weight: 650; color: Theme.ink; vertical-alignment: center; horizontal-stretch: 1; }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton { icon: @image-url("icons/close.svg"); clicked => { St.plugins-open = false; } }
+                    }
+                }
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                content-width: self.visible-width;
+                VerticalLayout {
+                    alignment: start;
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 2px;
+                    for p in St.plugins: PluginItem { p: p; }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+            VerticalLayout {
+                padding: 12px;
+                spacing: 4px;
+                PrimaryButton { text: "Каталог плагинов"; clicked => { Api.open-catalog(0); } }
+                HorizontalLayout {
+                    spacing: 4px;
+                    PrimaryButton { flat: true; text: "Из файла"; clicked => { Api.plugin-install-file(); } }
+                    PrimaryButton { flat: true; text: "Написать свой"; clicked => { Api.plugin-docs(); } }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================ настройки плагина
+
+component Check inherits Rectangle {
+    in property <string> text;
+    in property <bool> checked;
+    callback toggled(bool);
+    height: max(26px, cl.preferred-height);
+    cl := HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 5px;
+                background: root.checked ? Theme.accent : ca.has-hover ? Theme.hover : transparent;
+                border-width: root.checked ? 0px : 1.5px;
+                border-color: ca.has-hover ? Theme.accent : Theme.faint;
+                if root.checked: Image { source: @image-url("icons/check.svg"); width: 14px; colorize: white; }
+            }
+        }
+        Text { text: root.text; color: Theme.ink; font-size: 13.5px; vertical-alignment: center; wrap: word-wrap; horizontal-stretch: 1; }
+    }
+    ca := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(!root.checked); }
+    }
+}
+
+// кнопка плагина: пока плагин работает, сразу показывает busyText
+component PButton inherits Rectangle {
+    in property <string> label;
+    in property <string> busy-label;
+    in property <string> code;
+    in property <bool> flat;
+    in property <bool> in-card;
+    property <bool> working;
+    height: 36px;
+    border-radius: 9px;
+    background: root.flat
+        ? (ta.has-hover ? Theme.accent.with-alpha(0.12) : root.in-card ? Theme.panel : Theme.field)
+        : (ta.pressed ? Theme.accent.darker(0.15) : ta.has-hover ? Theme.accent.brighter(0.08) : Theme.accent);
+    opacity: root.working ? 0.75 : 1;
+    Text {
+        text: root.working ? root.busy-label : root.label;
+        color: root.flat ? Theme.accent : Theme.on-accent;
+        font-size: 13.5px;
+        font-weight: 600;
+    }
+    Timer {
+        interval: 25s;
+        running: root.working;
+        triggered => { root.working = false; }
+    }
+    ta := TouchArea {
+        mouse-cursor: root.working ? default : pointer;
+        clicked => {
+            if (root.working) { return; }
+            if (root.busy-label != "") { root.working = true; }
+            Api.plugin-ui-click(root.code);
+        }
+    }
+}
+
+component CellView inherits Rectangle {
+    in property <PCell> c;
+    in property <bool> in-card;
+    height: 34px;
+    if c.kind == "text": Text {
+        width: parent.width;
+        text: c.text;
+        color: c.has-color ? c.color : Theme.ink;
+        font-size: 13.5px;
+        font-weight: c.bold ? 650 : 400;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if c.kind == "button": PButton {
+        flat: c.style == "flat";
+        in-card: root.in-card;
+        label: c.text;
+        busy-label: c.busy-text;
+        code: c.click;
+    }
+    if c.kind == "switch": HorizontalLayout {
+        spacing: 8px;
+        Text { text: c.text; color: Theme.ink; font-size: 13.5px; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        VerticalLayout {
+            alignment: center;
+            Toggle { checked: c.value == "true"; toggled(v) => { Api.plugin-ui-set(c.key, v ? "true" : "false", c.change); } }
+        }
+    }
+    if c.kind == "checkbox": Check {
+        y: (parent.height - self.height) / 2;
+        width: parent.width;
+        text: c.text;
+        checked: c.value == "true";
+        toggled(v) => { Api.plugin-ui-set(c.key, v ? "true" : "false", c.change); }
+    }
+}
+
+// Строка настроек. Строки одной карточки идут вплотную и вместе дают один сплошной блок.
+component RowView inherits Rectangle {
+    in property <PUiRow> r;
+    in property <length> w;
+    property <length> gap: r.in-card && r.card-first ? 10px : 0px;
+    property <length> pt: r.in-card ? (r.card-first ? 12px : 4px) : 4px;
+    property <length> pb: r.in-card ? (r.card-last ? 12px : 4px) : 4px;
+    property <length> inner: root.w - (r.in-card ? 28px : 0px);
+    height: root.gap + root.pt + body.preferred-height + root.pb;
+    if r.in-card: Rectangle {
+        y: root.gap;
+        height: parent.height - root.gap;
+        background: Theme.field;
+        border-top-left-radius: r.card-first ? 12px : 0px;
+        border-top-right-radius: r.card-first ? 12px : 0px;
+        border-bottom-left-radius: r.card-last ? 12px : 0px;
+        border-bottom-right-radius: r.card-last ? 12px : 0px;
+    }
+    body := VerticalLayout {
+        y: root.gap + root.pt;
+        x: r.in-card ? 14px : 0px;
+        width: root.inner;
+        height: self.preferred-height;
+        if r.kind == "text": Text {
+            width: root.inner;
+            text: r.text;
+            color: r.has-color ? r.color : Theme.ink;
+            font-size: r.size > 0 ? r.size * 1px : 13.5px;
+            font-weight: r.bold ? 650 : 400;
+            wrap: word-wrap;
+        }
+        if r.kind == "button": HorizontalLayout {
+            alignment: start;
+            PButton {
+                width: max(140px, bl.preferred-width + 32px);
+                flat: r.style == "flat";
+                in-card: r.in-card;
+                label: r.text;
+                busy-label: r.busy-text;
+                code: r.click;
+            }
+            bl := Text { text: r.busy-text != "" && r.busy-text.character-count > r.text.character-count ? r.busy-text : r.text; font-size: 13.5px; font-weight: 600; visible: false; width: 0; }
+        }
+        if r.kind == "switch": HorizontalLayout {
+            spacing: 10px;
+            min-height: 30px;
+            Text { text: r.text; color: Theme.ink; font-size: 14px; font-weight: 600; vertical-alignment: center; wrap: word-wrap; horizontal-stretch: 1; }
+            VerticalLayout {
+                alignment: center;
+                Toggle { checked: r.value == "true"; toggled(v) => { Api.plugin-ui-set(r.key, v ? "true" : "false", r.change); } }
+            }
+        }
+        if r.kind == "checkbox": Check {
+            width: root.inner;
+            text: r.text;
+            checked: r.value == "true";
+            toggled(v) => { Api.plugin-ui-set(r.key, v ? "true" : "false", r.change); }
+        }
+        if r.kind == "input": VerticalLayout {
+            spacing: 5px;
+            if r.label != "": Text { text: r.label; color: Theme.muted; font-size: 12px; font-weight: 600; }
+            Field {
+                bg: r.in-card ? Theme.panel : Theme.field;
+                multi: !r.single;
+                height: r.single ? 38px : 96px;
+                text: r.value;
+                placeholder: r.text;
+                edited => { Api.plugin-ui-set(r.key, self.text, r.change); }
+            }
+        }
+        if r.kind == "slider": VerticalLayout {
+            spacing: 0px;
+            HorizontalLayout {
+                Text { text: r.label; color: Theme.muted; font-size: 12px; font-weight: 600; horizontal-stretch: 1; vertical-alignment: center; }
+                Text { text: round(sl.value); color: Theme.ink; font-size: 13px; font-weight: 650; vertical-alignment: center; }
+            }
+            sl := Slider {
+                minimum: r.min;
+                maximum: r.max;
+                value: r.value.is-float() ? r.value.to-float() : r.min;
+                released(v) => { Api.plugin-ui-set(r.key, round(v), r.change); }
+            }
+        }
+        if r.kind == "select": VerticalLayout {
+            spacing: 5px;
+            if r.label != "": Text { text: r.label; color: Theme.muted; font-size: 12px; font-weight: 600; }
+            ComboBox {
+                model: r.options;
+                current-index: r.value.is-float() ? r.value.to-float() : 0;
+                selected(v) => { Api.plugin-ui-set(r.key, self.current-index, r.change); }
+            }
+        }
+        if r.kind == "image" && r.has-img: HorizontalLayout {
+            alignment: start;
+            Rectangle {
+                height: r.height > 0 ? r.height * 1px : 120px;
+                width: min(root.inner, self.height * (ri.source.width / max(1, ri.source.height)));
+                border-radius: r.radius * 1px;
+                clip: true;
+                ri := Image { width: parent.width; height: parent.height; source: r.img; image-fit: cover; }
+            }
+        }
+        if r.kind == "divider": Rectangle { height: 13px; Rectangle { height: 1px; background: Theme.line; } }
+        if r.kind == "spacer": Rectangle { height: r.size * 1px; }
+        if r.kind == "row": HorizontalLayout {
+            spacing: 8px;
+            for c in r.cells: CellView { c: c; in-card: r.in-card; horizontal-stretch: 1; }
+        }
+    }
+}
+
+export component PluginDialog inherits Rectangle {
+    property <bool> shown;
+    property <length> cw: min(600px, root.width - 24px);
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim { dismiss => { Api.plugin-close(); } }
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.96;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: root.cw;
+        height: min(root.height - 24px, 720px);
+        border-radius: 16px;
+        background: Theme.panel;
+        drop-shadow-blur: 28px;
+        drop-shadow-color: Theme.shadow;
+        clip: true;
+        TouchArea { }
+        VerticalLayout {
+            // шапка
+            Rectangle {
+                height: hd.preferred-height;
+                hd := VerticalLayout {
+                    padding: 20px;
+                    padding-right: 10px;
+                    padding-bottom: 14px;
+                    spacing: 4px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Text { text: St.plugin-name; color: Theme.ink; font-size: 19px; font-weight: 750; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+                        VerticalLayout {
+                            alignment: center;
+                            Toggle { checked: St.plugin-on; toggled(v) => { Api.plugin-toggle(St.plugin-id, v); } }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            IconButton { icon: @image-url("icons/close.svg"); clicked => { Api.plugin-close(); } }
+                        }
+                    }
+                    Text {
+                        text: (St.plugin-author != "" ? St.plugin-author : "Автор не указан") + (St.plugin-version != "" ? ", версия " + St.plugin-version : "");
+                        color: Theme.muted;
+                        font-size: 12.5px;
+                    }
+                    if St.plugin-desc != "": Text { text: St.plugin-desc; color: Theme.ink; font-size: 13.5px; wrap: word-wrap; }
+                }
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+            }
+            if !St.plugin-on: Rectangle {
+                height: 34px;
+                background: Theme.accent.with-alpha(0.07);
+                Text { text: "Плагин выключен. Настройки сохранятся и заработают, когда вы его включите"; color: Theme.muted; font-size: 12.5px; }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                clip: true;
+                if St.plugin-ui.length == 0: Pill { text: "У этого плагина нет настроек"; }
+                // у выключенного плагина настройки притушены, а вокруг курсора светло, как от фонарика
+                lamp := TouchArea {
+                    if St.plugin-ui.length > 0: ScrollView {
+                        content-width: self.visible-width;
+                        VerticalLayout {
+                            alignment: start;
+                            padding: 20px;
+                            padding-top: 12px;
+                            spacing: 0px;
+                            for r in St.plugin-ui: RowView { r: r; w: root.cw - 40px; }
+                        }
+                    }
+                }
+                if !St.plugin-on && St.plugin-ui.length > 0 && !lamp.has-hover: Rectangle {
+                    background: Theme.panel.with-alpha(0.62);
+                }
+                if !St.plugin-on && St.plugin-ui.length > 0 && lamp.has-hover: Rectangle {
+                    property <length> d: 1600px;
+                    x: lamp.mouse-x - self.d / 2;
+                    y: lamp.mouse-y - self.d / 2;
+                    width: self.d;
+                    height: self.d;
+                    background: @radial-gradient(circle, Theme.panel.with-alpha(0) 0%, Theme.panel.with-alpha(0) 7%, Theme.panel.with-alpha(0.62) 19%, Theme.panel.with-alpha(0.62) 100%);
+                }
+            }
+            // журнал плагина
+            if St.plugin-logs-open: Rectangle {
+                height: 150px;
+                background: Theme.dark ? #0E1218 : #F3F6FA;
+                ScrollView {
+                    content-width: self.visible-width;
+                    VerticalLayout {
+                        padding: 12px;
+                        Text {
+                            text: St.plugin-logs != "" ? St.plugin-logs : "Пока пусто";
+                            color: Theme.muted;
+                            font-size: 11.5px;
+                            font-family: "Consolas";
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                height: 58px;
+                Rectangle { y: 0; height: 1px; background: Theme.line; }
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    padding-top: 9px;
+                    padding-bottom: 9px;
+                    spacing: 6px;
+                    PrimaryButton {
+                        width: 130px;
+                        flat: true;
+                        text: St.plugin-logs-open ? "Скрыть журнал" : "Журнал";
+                        clicked => { St.plugin-logs-open = !St.plugin-logs-open; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    if !St.plugin-builtin: Rectangle {
+                        width: 120px;
+                        border-radius: 10px;
+                        background: dta.has-hover ? Theme.danger.with-alpha(0.12) : transparent;
+                        Text { text: St.plugin-del ? "Точно удалить?" : "Удалить"; color: Theme.danger; font-size: 14px; font-weight: 600; }
+                        dta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                if (St.plugin-del) {
+                                    Api.plugin-delete();
+                                } else {
+                                    St.plugin-del = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================ разрешение на опасное действие
+
+export component PluginAsk inherits Rectangle {
+    Dim { dismiss => { Api.plugin-ask-answer(0); } }
+    Rectangle {
+        width: min(420px, root.width - 32px);
+        height: al.preferred-height;
+        border-radius: 14px;
+        background: Theme.panel;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: Theme.shadow;
+        TouchArea { }
+        al := VerticalLayout {
+            padding: 20px;
+            spacing: 10px;
+            Text { text: "Плагин просит разрешение"; color: Theme.ink; font-size: 17px; font-weight: 650; }
+            Text {
+                text: "\"" + St.plugin-ask-name + "\" хочет " + St.plugin-ask + ". Разрешите, только если доверяете этому плагину.";
+                color: Theme.muted;
+                font-size: 13.5px;
+                wrap: word-wrap;
+            }
+            VerticalLayout {
+                spacing: 6px;
+                PrimaryButton { text: "Разрешить один раз"; clicked => { Api.plugin-ask-answer(1); } }
+                HorizontalLayout {
+                    spacing: 6px;
+                    PrimaryButton { flat: true; text: "Запретить"; clicked => { Api.plugin-ask-answer(0); } }
+                    PrimaryButton { flat: true; text: "Разрешать всегда"; clicked => { Api.plugin-ask-answer(2); } }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================ каталог: плагины и текстовые шаблоны
+
+component Tab inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    callback clicked();
+    height: 32px;
+    border-radius: 7px;
+    background: on ? Theme.panel : ta.has-hover ? Theme.hover : transparent;
+    drop-shadow-blur: on ? 3px : 0px;
+    drop-shadow-color: Theme.shadow;
+    Text { text: root.text; color: root.on ? Theme.ink : Theme.muted; font-size: 13px; font-weight: root.on ? 600 : 500; }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component PluginCard inherits Rectangle {
+    in property <CatPlugin> p;
+    height: 104px;
+    border-radius: 12px;
+    background: Theme.field;
+    clip: true;
+    HorizontalLayout {
+        padding: 10px;
+        spacing: 12px;
+        Rectangle {
+            width: 150px;
+            border-radius: 8px;
+            clip: true;
+            background: Theme.accent.with-alpha(0.12);
+            if p.has-banner: Image { width: parent.width; height: parent.height; source: p.banner; image-fit: cover; }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            Text { text: p.name; color: Theme.ink; font-size: 14.5px; font-weight: 650; overflow: elide; }
+            Rectangle {
+                vertical-stretch: 1;
+                clip: true;
+                Text { y: 0; width: parent.width; height: self.preferred-height; text: p.description; color: Theme.muted; font-size: 12.5px; wrap: word-wrap; vertical-alignment: top; }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            PrimaryButton {
+                width: 120px;
+                height: 36px;
+                flat: p.installed;
+                busy: p.busy;
+                text: p.installed ? "Установлен" : "Установить";
+                clicked => { if (!p.installed) { Api.cat-install(p.idx); } }
+            }
+        }
+    }
+}
+
+component PackCard inherits Rectangle {
+    in property <CatPack> p;
+    height: pl.preferred-height;
+    border-radius: 12px;
+    background: Theme.field;
+    pl := VerticalLayout {
+        padding: 14px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: p.name; color: Theme.ink; font-size: 14.5px; font-weight: 650; overflow: elide; horizontal-stretch: 1; }
+            Text { text: p.author; color: Theme.muted; font-size: 12.5px; vertical-alignment: center; }
+        }
+        if p.description != "": Text { text: p.description; color: Theme.muted; font-size: 12.5px; wrap: word-wrap; max-height: 52px; overflow: elide; }
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: (p.tpl-count > 0 ? "Шаблонов: " + p.tpl-count : "") + (p.has-reviews ? (p.tpl-count > 0 ? ", " : "") + "ответы на отзывы" : "") + (p.has-review-ask ? (p.tpl-count > 0 || p.has-reviews ? ", " : "") + "просьба об отзыве" : "");
+                color: Theme.ink;
+                font-size: 12.5px;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                wrap: word-wrap;
+            }
+            PrimaryButton {
+                width: 150px;
+                height: 36px;
+                flat: p.added;
+                text: p.added ? "Добавлено" : "Посмотреть";
+                clicked => { Api.pack-open(p.idx); }
+            }
+        }
+    }
+}
+
+export component CatalogDialog inherits Rectangle {
+    property <bool> shown;
+    Timer {
+        interval: 1ms;
+        running: !root.shown;
+        triggered => { root.shown = true; }
+    }
+    Dim { dismiss => { St.cat-open = false; } }
+    Rectangle {
+        opacity: root.shown ? 1 : 0;
+        transform-scale: root.shown ? 1 : 0.96;
+        animate opacity { duration: 140ms; easing: ease-out; }
+        animate transform-scale { duration: 190ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1.0); }
+        width: min(680px, root.width - 24px);
+        height: min(root.height - 24px, 700px);
+        border-radius: 16px;
+        background: Theme.panel;
+        drop-shadow-blur: 28px;
+        drop-shadow-color: Theme.shadow;
+        clip: true;
+        TouchArea { }
+        VerticalLayout {
+            Rectangle {
+                height: 54px;
+                HorizontalLayout {
+                    padding-left: 20px;
+                    padding-right: 8px;
+                    Text { text: "Каталог"; color: Theme.ink; font-size: 17px; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton { icon: @image-url("icons/close.svg"); clicked => { St.cat-open = false; } }
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-bottom: 10px;
+                Rectangle {
+                    height: 38px;
+                    border-radius: 9px;
+                    background: Theme.field;
+                    HorizontalLayout {
+                        padding: 3px;
+                        spacing: 2px;
+                        Tab { text: "Плагины"; on: St.cat-tab == 0; clicked => { Api.open-catalog(0); } }
+                        Tab { text: "Шаблоны"; on: St.cat-tab == 1; clicked => { St.pack-view = -1; Api.open-catalog(1); } }
+                    }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+            Rectangle {
+                vertical-stretch: 1;
+                ScrollView {
+                    content-width: self.visible-width;
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 16px;
+                        spacing: 10px;
+                        if St.cat-tab == 0: VerticalLayout {
+                            spacing: 10px;
+                            for p in St.cat-plugins: PluginCard { p: p; }
+                        }
+                        if St.cat-tab == 1 && St.pack-view < 0: VerticalLayout {
+                            spacing: 10px;
+                            for p in St.cat-packs: PackCard { p: p; }
+                        }
+                        if St.cat-tab == 1 && St.pack-view >= 0: VerticalLayout {
+                            spacing: 8px;
+                            HorizontalLayout {
+                                spacing: 6px;
+                                VerticalLayout { alignment: center; IconButton { size: 32px; icon-size: 20px; icon: @image-url("icons/arrow_back.svg"); clicked => { St.pack-view = -1; } } }
+                                VerticalLayout {
+                                    alignment: center;
+                                    horizontal-stretch: 1;
+                                    Text { text: St.pack-name; color: Theme.ink; font-size: 15.5px; font-weight: 700; overflow: elide; }
+                                    Text { text: St.pack-author != "" ? "Автор: " + St.pack-author : ""; color: Theme.muted; font-size: 12px; }
+                                }
+                            }
+                            Text { text: "Снимите галочки с того, что не нужно, и поправьте тексты под себя."; color: Theme.muted; font-size: 12.5px; wrap: word-wrap; }
+                            for it in St.pack-items: VerticalLayout {
+                                spacing: 6px;
+                                if it.section != "": Text { text: it.section; color: Theme.accent; font-size: 12.5px; font-weight: 700; }
+                                Rectangle {
+                                    height: pil.preferred-height;
+                                    border-radius: 10px;
+                                    background: Theme.field;
+                                    opacity: it.on ? 1 : 0.55;
+                                    pil := VerticalLayout {
+                                        padding: 12px;
+                                        spacing: 6px;
+                                        Check { text: it.title; checked: it.on; toggled(v) => { Api.pack-item-toggle(it.idx, v); } }
+                                        if it.on && it.a-label != "": Field { bg: Theme.panel; text: it.a; placeholder: it.a-label; edited => { Api.pack-item-set(it.idx, 0, self.text); } }
+                                        if it.on: Field { bg: Theme.panel; multi: true; height: 76px; text: it.b; placeholder: "Текст"; edited => { Api.pack-item-set(it.idx, 1, self.text); } }
+                                    }
+                                }
+                            }
+                            Rectangle { height: 60px; }
+                        }
+                    }
+                }
+                if St.cat-tab == 1 && St.pack-view >= 0: Rectangle {
+                    y: parent.height - 64px;
+                    height: 64px;
+                    background: Theme.panel;
+                    Rectangle { y: 0; height: 1px; background: Theme.line; }
+                    HorizontalLayout {
+                        padding: 12px;
+                        PrimaryButton {
+                            enabled: St.pack-count > 0;
+                            text: St.pack-count > 0 ? "Добавить выбранное: " + St.pack-count : "Ничего не выбрано";
+                            clicked => { Api.pack-apply(); }
+                        }
+                    }
+                }
+                if St.cat-loading: Pill { text: "Загружаю каталог…"; }
+                if !St.cat-loading && St.cat-error != "": Pill { text: St.cat-error; }
+            }
+        }
+    }
+}

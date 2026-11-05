@@ -27,6 +27,12 @@ pub struct Resp {
 
 pub struct Fp {
     http: Client,
+    /// прокси аккаунта: (адрес, строгий режим) и проверен ли он
+    proxy: Option<(String, bool)>,
+    proxy_ok: bool,
+    proxy_block: Option<String>,
+    /// писать запросы и ответы FunPay в журнал плагина
+    pub trace: bool,
     pub gk: String,
     pub cookies: BTreeMap<String, String>,
     pub app: AppData,
@@ -57,6 +63,52 @@ pub fn clean_key(raw: &str) -> String {
         return c[1].to_string();
     }
     raw.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == ';' || c.is_whitespace()).to_string()
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RaiseResult {
+    pub game: String,
+    pub title: String,
+    pub nodes: Vec<String>,
+    /// raised, wait или error
+    pub status: String,
+    /// через сколько секунд можно снова
+    pub wait: i64,
+    pub msg: String,
+}
+
+static RE_VALUE_ID: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| regex::Regex::new(r#"value="(\d+)""#).unwrap());
+
+fn json_err(v: &serde_json::Value) -> bool {
+    v.get("error").map(|e| e.as_bool().unwrap_or(false) || e.as_i64().unwrap_or(0) != 0).unwrap_or(false)
+}
+
+pub fn is_funpay_url(u: &str) -> bool {
+    let Some(rest) = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")) else { return false };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("").to_ascii_lowercase();
+    let host = host.split('@').last().unwrap_or("");
+    let host = host.split(':').next().unwrap_or("");
+    host == "funpay.com" || host.ends_with(".funpay.com")
+}
+
+fn is_wait_message(msg: &str) -> bool {
+    let l = msg.to_lowercase();
+    ["подождите", "please wait", "зачекайте", "почекайте"].iter().any(|w| l.contains(w))
+}
+
+/// "Подождите 15 минут." → секунды, как в Cardinal: минуты на одну меньше, часы на полчаса меньше.
+pub fn parse_wait_seconds(msg: &str) -> i64 {
+    let l = msg.to_lowercase();
+    let n: Option<i64> = msg.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().ok();
+    if l.contains("секунд") || l.contains("second") {
+        n.unwrap_or(2)
+    } else if l.contains("минут") || l.contains("хвилин") || l.contains("minute") {
+        (n.unwrap_or(2) - 1).max(1) * 60
+    } else if l.contains("час") || l.contains("годин") || l.contains("hour") {
+        (((n.unwrap_or(1) as f64) - 0.5) * 3600.0).max(60.0) as i64
+    } else {
+        10
+    }
 }
 
 /// Заполняет пустые поля формы чем угодно подходящим: список берёт первый вариант, текст и число "1".
@@ -94,40 +146,87 @@ fn fill_required(f: &mut crate::lots::Form, code: &str, force: &[String]) {
 }
 
 pub fn http_client(timeout: u64) -> Client {
-    Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(timeout))
-        .connect_timeout(Duration::from_secs(12))
-        .gzip(true)
-        .brotli(true)
-        .user_agent(ua())
-        .build()
-        .expect("http client")
+    client_with(timeout, false, None).expect("http client")
 }
 
 /// Клиент для картинок и стикеров: идёт по редиректам (нужно для зеркал GitHub/CDN).
 pub fn http_client_follow(timeout: u64) -> Client {
-    Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(5))
+    client_with(timeout, true, None).expect("http client")
+}
+
+pub fn client_with(timeout: u64, follow: bool, proxy: Option<&str>) -> Result<Client, String> {
+    let mut b = Client::builder()
+        .redirect(if follow { reqwest::redirect::Policy::limited(5) } else { reqwest::redirect::Policy::none() })
         .timeout(Duration::from_secs(timeout))
         .connect_timeout(Duration::from_secs(12))
         .gzip(true)
         .brotli(true)
-        .user_agent(ua())
-        .build()
-        .expect("http client")
+        .user_agent(ua());
+    if let Some(p) = proxy {
+        b = b.proxy(reqwest::Proxy::all(p).map_err(|e| format!("Прокси не принят: {e}"))?);
+    }
+    b.build().map_err(|e| e.to_string())
 }
 
 impl Fp {
     pub fn new(gk: &str, cookies: BTreeMap<String, String>) -> Self {
-        Self {
+        let mut f = Self {
             http: http_client(30),
+            proxy: None,
+            proxy_ok: false,
+            proxy_block: None,
+            trace: false,
             gk: gk.trim().to_string(),
             cookies,
             app: AppData::default(),
             auth_at: None,
             fresh_at: None,
             cookies_dirty: false,
+        };
+        f.reload_proxy();
+        f
+    }
+
+    /// Берёт прокси из настроек аккаунта заново (после правки в настройках).
+    pub fn reload_proxy(&mut self) {
+        self.proxy = crate::proxy::for_key(&self.gk);
+        self.proxy_ok = false;
+        self.proxy_block = None;
+        self.http = http_client(30);
+        if let Some((url, strict)) = self.proxy.clone() {
+            match client_with(30, false, Some(&url)) {
+                Ok(c) => self.http = c,
+                Err(e) if strict => self.proxy_block = Some(format!("Прокси аккаунта не подходит: {e}")),
+                Err(e) => {
+                    crate::log::write(&format!("прокси не подошёл, работаем напрямую: {e}"));
+                    self.proxy = None;
+                }
+            }
+        }
+    }
+
+    /// Перед входом проверяем прокси. В строгом режиме без него дальше не идём.
+    pub fn proxy_gate(&mut self) -> Result<(), String> {
+        if let Some(e) = &self.proxy_block {
+            return Err(e.clone());
+        }
+        let Some((url, strict)) = self.proxy.clone() else { return Ok(()) };
+        if self.proxy_ok {
+            return Ok(());
+        }
+        match crate::proxy::check(&url) {
+            Ok(info) => {
+                crate::log::write(&format!("прокси аккаунта: {info}"));
+                self.proxy_ok = true;
+                Ok(())
+            }
+            Err(e) if strict => Err(format!("{e}. Аккаунт не запустится без прокси, пока он не заработает")),
+            Err(e) => {
+                crate::log::write(&format!("прокси не отвечает ({e}), работаем напрямую"));
+                self.proxy = None;
+                self.http = http_client(30);
+                Ok(())
+            }
         }
     }
 
@@ -201,20 +300,61 @@ impl Fp {
                     }
                 };
             }
-            let resp = rb.send().map_err(net_err)?;
+            let resp = match rb.send() {
+                Ok(r) => r,
+                Err(e) => {
+                    let e = net_err(e);
+                    self.trace_line(if post { "POST" } else { "GET" }, &url, None, &e);
+                    return Err(e);
+                }
+            };
             self.capture(resp.headers());
             let status = resp.status().as_u16();
             if (300..400).contains(&status) {
                 if let Some(loc) = resp.headers().get(LOCATION).and_then(|l| l.to_str().ok()) {
+                    self.trace_line(if post { "POST" } else { "GET" }, &url, Some(status), "перенаправление");
                     url = if loc.starts_with("http") { loc.to_string() } else { parse::abs_url(loc) };
                     post = false;
                     continue;
                 }
             }
             let text = resp.text().map_err(net_err)?;
+            self.trace_line(if post { "POST" } else { "GET" }, &url, Some(status), &text);
             return Ok(Resp { status, text });
         }
         Err("Слишком много перенаправлений".into())
+    }
+
+    /// Запрос и ответ FunPay одной строкой в журнал плагина. Куки и csrf сюда не попадают.
+    fn trace_line(&self, method: &str, url: &str, status: Option<u16>, body: &str) {
+        if !self.trace {
+            return;
+        }
+        let path = url.strip_prefix("https://funpay.com").unwrap_or(url);
+        let path = if path.len() > 90 { format!("{}…", path.chars().take(90).collect::<String>()) } else { path.to_string() };
+        let Some(code) = status else {
+            crate::plugins::trace(&format!("FunPay {method} {path} → нет ответа: {body}"));
+            return;
+        };
+        let t = body.trim_start();
+        let what = if t.starts_with('{') || t.starts_with('[') {
+            // json ответа коротко, без токенов
+            let mut v: serde_json::Value = serde_json::from_str(t).unwrap_or(serde_json::Value::Null);
+            if let Some(o) = v.as_object_mut() {
+                for k in ["csrf_token", "csrf-token", "token"] {
+                    o.remove(k);
+                }
+            }
+            let j = if v.is_null() { t.to_string() } else { v.to_string() };
+            if j.chars().count() > 220 { format!("{}…", j.chars().take(220).collect::<String>()) } else { j }
+        } else if body == "перенаправление" {
+            body.to_string()
+        } else if t.is_empty() {
+            "пустой ответ".to_string()
+        } else {
+            format!("страница, {} КБ", (body.len() + 1023) / 1024)
+        };
+        crate::plugins::trace(&format!("FunPay {method} {path} → {code} {what}"));
     }
 
     /// Запрос с повтором при 428 (нет golden_seal): обновляем печать и пробуем ещё раз.
@@ -250,6 +390,7 @@ impl Fp {
 
     /// Главная страница: csrf, userId, ник, аватар, баланс. Раз в 50 минут — новая сессия по golden_key.
     pub fn ensure_auth(&mut self, force: bool) -> Result<(), String> {
+        self.proxy_gate()?;
         if !force && self.is_authed() && self.auth_at.map(|t| t.elapsed() < AUTH_TTL).unwrap_or(false) {
             return Ok(());
         }
@@ -754,6 +895,146 @@ impl Fp {
         Err(last)
     }
 
+    /// Произвольный запрос к funpay.com для плагинов: куки подставляются здесь и наружу не отдаются.
+    /// Перенаправления идут только внутри funpay.com.
+    pub fn raw(&mut self, method: &str, url: &str, body: Option<(String, Vec<u8>)>, headers: &[(String, String)]) -> Result<(u16, String, String), String> {
+        self.ensure_auth(false)?;
+        let mut url = url.to_string();
+        let mut method = method.to_uppercase();
+        let mut body = body;
+        for _ in 0..6 {
+            if !is_funpay_url(&url) {
+                return Err("Перенаправление за пределы funpay.com заблокировано".into());
+            }
+            let m = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "Неизвестный метод запроса".to_string())?;
+            let mut rb = self.http.request(m, &url).header("Cookie", self.cookie_header(false)).header("Accept-Language", "ru-RU,ru;q=0.9,en;q=0.8");
+            for (k, v) in headers {
+                let kl = k.to_ascii_lowercase();
+                // свои куки и хост плагин подменить не может
+                if kl == "cookie" || kl == "host" || kl.starts_with("sec-") {
+                    continue;
+                }
+                rb = rb.header(k.as_str(), v.as_str());
+            }
+            if let Some((ct, b)) = &body {
+                if !ct.is_empty() {
+                    rb = rb.header("Content-Type", ct.as_str());
+                }
+                rb = rb.body(b.clone());
+            }
+            let resp = match rb.send() {
+                Ok(r) => r,
+                Err(e) => {
+                    let e = net_err(e);
+                    self.trace_line(&method, &url, None, &e);
+                    return Err(e);
+                }
+            };
+            self.capture(resp.headers());
+            let status = resp.status().as_u16();
+            if (300..400).contains(&status) {
+                if let Some(loc) = resp.headers().get(LOCATION).and_then(|l| l.to_str().ok()) {
+                    self.trace_line(&method, &url, Some(status), "перенаправление");
+                    url = if loc.starts_with("http") { loc.to_string() } else { parse::abs_url(loc) };
+                    method = "GET".into();
+                    body = None;
+                    continue;
+                }
+            }
+            let text = resp.text().map_err(net_err)?;
+            self.trace_line(&method, &url, Some(status), &text);
+            return Ok((status, text, url));
+        }
+        Err("Слишком много перенаправлений".into())
+    }
+
+    pub fn csrf(&mut self) -> String {
+        let _ = self.ensure_auth(false);
+        self.app.csrf.clone()
+    }
+
+    pub fn username(&self) -> String {
+        self.app.username.clone()
+    }
+
+    /// Поднять все свои лоты. Логика как в FunPay Cardinal и мобильном приложении:
+    /// для каждой игры один запрос lots/raise с game_id, node_id и всеми node_ids[].
+    pub fn raise_lots(&mut self) -> Result<Vec<RaiseResult>, String> {
+        self.ensure_auth(false)?;
+        let uid = self.app.user_id.clone();
+        let r = self.request(false, &format!("https://funpay.com/users/{uid}/"), Body::None, false)?;
+        if r.status >= 400 {
+            return Err(format!("Профиль не открылся (HTTP {})", r.status));
+        }
+        let groups = parse::parse_raise_groups(&r.text);
+        if groups.is_empty() {
+            return Ok(Vec::new());
+        }
+        // игра раздела: из data-game-id или со главной страницы
+        let mut games: Vec<(String, String, Vec<String>)> = Vec::new();
+        let mut need_map = groups.iter().any(|g| g.game.is_empty());
+        let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        if need_map {
+            let m = self.request(false, "https://funpay.com/", Body::None, false)?;
+            map = parse::parse_node_games(&m.text);
+            need_map = false;
+        }
+        let _ = need_map;
+        for g in groups {
+            let game = if g.game.is_empty() { map.get(&g.node).cloned().unwrap_or_default() } else { g.game.clone() };
+            if game.is_empty() {
+                continue;
+            }
+            match games.iter_mut().find(|x| x.0 == game) {
+                Some(x) => {
+                    if !x.2.contains(&g.node) {
+                        x.2.push(g.node.clone());
+                    }
+                }
+                None => games.push((game, g.title.clone(), vec![g.node.clone()])),
+            }
+        }
+        let mut out = Vec::new();
+        for (game, title, nodes) in games {
+            let mut form = vec![("game_id".to_string(), game.clone()), ("node_id".to_string(), nodes[0].clone())];
+            for n in &nodes {
+                form.push(("node_ids[]".to_string(), n.clone()));
+            }
+            let mut res = self.request(true, "https://funpay.com/lots/raise", Body::Form(form), true)?;
+            let mut v: serde_json::Value = serde_json::from_str(&res.text).unwrap_or_default();
+            // FunPay просит выбрать разделы: берём их из окна и повторяем
+            if v.get("modal").is_some() || (v.get("url").and_then(|u| u.as_str()).map(|u| !u.is_empty()).unwrap_or(false) && !json_err(&v)) {
+                let init = self.request(true, "https://funpay.com/lots/raise", Body::Form(vec![("game_id".into(), game.clone()), ("node_id".into(), nodes[0].clone())]), true)?;
+                let iv: serde_json::Value = serde_json::from_str(&init.text).unwrap_or_default();
+                let modal = iv.get("modal").and_then(|m| m.as_str()).unwrap_or("");
+                let ids: Vec<String> = RE_VALUE_ID.captures_iter(modal).map(|c| c[1].to_string()).collect();
+                if !ids.is_empty() {
+                    let mut form = vec![("game_id".to_string(), game.clone()), ("node_id".to_string(), ids[0].clone())];
+                    for n in &ids {
+                        form.push(("node_ids[]".to_string(), n.clone()));
+                    }
+                    std::thread::sleep(Duration::from_millis(800));
+                    res = self.request(true, "https://funpay.com/lots/raise", Body::Form(form), true)?;
+                    v = serde_json::from_str(&res.text).unwrap_or_default();
+                } else {
+                    v = iv;
+                }
+            }
+            let msg = v.get("msg").and_then(|m| m.as_str()).unwrap_or("").to_string();
+            let wait_field = v.get("wait").and_then(|w| w.as_i64()).unwrap_or(0);
+            let (status, wait) = if is_wait_message(&msg) {
+                ("wait".to_string(), if wait_field > 0 { wait_field } else { parse_wait_seconds(&msg) })
+            } else if !json_err(&v) && res.status < 400 {
+                ("raised".to_string(), if wait_field > 0 { wait_field } else { 3600 })
+            } else {
+                ("error".to_string(), 0)
+            };
+            out.push(RaiseResult { game, title, nodes, status, wait, msg });
+            std::thread::sleep(Duration::from_millis(1000));
+        }
+        Ok(out)
+    }
+
     /// Ищет свой лот по тексту в названии и возвращает его id.
     pub fn find_my_offer(&mut self, needle: &str) -> Option<String> {
         let uid = self.app.user_id.clone();
@@ -781,6 +1062,75 @@ impl Fp {
     }
 
     // ------------------------------------------------------------ мои лоты
+
+    /// Продажи новее cutoff, страницу за страницей (не больше max_pages). progress получает число загруженных.
+    pub fn sales_since(&mut self, cutoff: Option<chrono::NaiveDateTime>, max_pages: usize, progress: &mut dyn FnMut(usize)) -> Result<Vec<crate::money::TradeItem>, String> {
+        let now = now_msk();
+        let mut all = Vec::new();
+        let mut cont = String::new();
+        for _ in 0..max_pages {
+            let (items, next) = self.trade_page(true, "", &cont)?;
+            let older = cutoff.is_some_and(|c| items.iter().filter_map(|t| parse::parse_fp_date(&t.date, now)).any(|d| d < c));
+            all.extend(items);
+            progress(all.len());
+            if older || next.is_empty() {
+                break;
+            }
+            cont = next;
+        }
+        Ok(all)
+    }
+
+    /// Подробности операции из "Финансов", как в окне на сайте: (название, строки, ссылка на внешнюю транзакцию).
+    pub fn transaction_info(&mut self, id: &str) -> Result<(String, Vec<(String, String)>, String), String> {
+        self.ensure_auth(false)?;
+        let r = self.request(false, &format!("https://funpay.com/users/transaction?id={id}"), Body::None, true)?;
+        if r.status >= 400 {
+            return Err(format!("FunPay не открыл операцию (HTTP {})", r.status));
+        }
+        let v: serde_json::Value = serde_json::from_str(&r.text).map_err(|_| "FunPay ответил не так, как ждали".to_string())?;
+        let html = v.get("html").and_then(|h| h.as_str()).ok_or("В ответе нет данных об операции")?;
+        Ok(parse::parse_transaction_info(html))
+    }
+
+    /// Сводка для виджетов: баланс и продажи за сегодня со страницы продаж, по желанию лоты.
+    pub fn stats(&mut self, lots: bool) -> Result<crate::feat5::Stats, String> {
+        use crate::money::{parse_amount, TradeState};
+        self.ensure_auth(false)?;
+        let r = self.request(false, "https://funpay.com/orders/trade", Body::None, false)?;
+        if r.status >= 400 {
+            return Err(format!("Продажи не открылись (HTTP {})", r.status));
+        }
+        let mut s = crate::feat5::Stats { balance: parse::parse_main(&r.text).map(|d| d.balance).unwrap_or_default(), ..Default::default() };
+        let (list, _) = crate::money::parse_trade(&r.text);
+        let now = now_msk();
+        let mut sums: Vec<(String, f64)> = Vec::new();
+        for t in &list {
+            if t.state == TradeState::Paid {
+                s.paid += 1;
+            }
+            let today = parse::parse_fp_date(&t.date, now).map(|d| d.date() == now.date()).unwrap_or(false);
+            if today && t.state != TradeState::Refunded {
+                s.sales += 1;
+                let (v, cur) = parse_amount(&t.price);
+                match sums.iter_mut().find(|x| x.0 == cur) {
+                    Some(x) => x.1 += v,
+                    None => sums.push((cur, v)),
+                }
+            }
+        }
+        s.sales_sum = sums
+            .iter()
+            .map(|(c, v)| crate::money::fmt_amount(*v, c).trim_start_matches('+').to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if lots {
+            if let Ok(l) = self.my_lots() {
+                s.lots = Some((l.iter().filter(|x| x.active).count(), l.len()));
+            }
+        }
+        Ok(s)
+    }
 
     pub fn my_lots(&mut self) -> Result<Vec<crate::lots::MyLot>, String> {
         self.ensure_auth(false)?;
@@ -907,6 +1257,18 @@ pub fn now_msk() -> chrono::NaiveDateTime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_url_guard() {
+        assert!(is_funpay_url("https://funpay.com/lots/raise"));
+        assert!(is_funpay_url("https://sfunpay.funpay.com/x"));
+        assert!(!is_funpay_url("https://funpay.com.evil.ru/"));
+        assert!(!is_funpay_url("https://evil.ru/?funpay.com"));
+        assert!(!is_funpay_url("https://evil.ru@funpay.com.x/"));
+        assert_eq!(parse_wait_seconds("Подождите 15 минут."), 840);
+        assert_eq!(parse_wait_seconds("Please wait 32 seconds"), 32);
+        assert_eq!(parse_wait_seconds("Подождите 2 часа."), 5400);
+    }
 
     #[test]
     fn verify_form_filled() {

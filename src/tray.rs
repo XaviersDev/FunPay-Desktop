@@ -74,13 +74,16 @@ mod imp {
         T.with(|c| *c.borrow_mut() = None);
     }
 
-    /// Автозапуск через HKCU\...\Run (как у Telegram): программа стартует в фоне.
+    /// Автозапуск через HKCU\...\Run. В автозапуск пишем не тот exe, который запустили,
+    /// а постоянную копию в папке программы (%APPDATA%\FunPayTools\app): ярлык и сам файл
+    /// можно двигать куда угодно, автозапуск от этого не ломается.
     pub fn set_autostart(on: bool) {
         use winreg::enums::*;
         use winreg::RegKey;
         let Ok((key, _)) = RegKey::predef(HKEY_CURRENT_USER).create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Run") else { return };
         if on {
-            if let Ok(exe) = std::env::current_exe() {
+            let target = super::stable_copy().or_else(|| std::env::current_exe().ok());
+            if let Some(exe) = target {
                 let _ = key.set_value("FunPayTools", &format!("\"{}\" --background", exe.display()));
             }
         } else {
@@ -104,6 +107,63 @@ mod imp {
 }
 
 pub use imp::*;
+
+// ------------------------------------------------------------ постоянная копия для автозапуска
+
+fn stable_dir() -> std::path::PathBuf {
+    crate::config::dir().join("app")
+}
+
+pub fn stable_path() -> std::path::PathBuf {
+    stable_dir().join("FunPayTools.exe")
+}
+
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Отметка сборки: версия и размер файла. По ней видно, что в папке программы лежит другая сборка.
+fn build_mark(path: &std::path::Path) -> String {
+    let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    format!("{} {size}", env!("CARGO_PKG_VERSION"))
+}
+
+/// Держит в папке программы копию того exe, который сейчас запущен, для автозапуска.
+/// Запущенный файл всегда главный: какую сборку человек открыл, та и попадёт в автозапуск.
+pub fn stable_copy() -> Option<std::path::PathBuf> {
+    let cur = std::env::current_exe().ok()?;
+    let dst = stable_path();
+    let mark_file = stable_dir().join("version.txt");
+    let mark = build_mark(&cur);
+    if same_file(&cur, &dst) {
+        let _ = std::fs::write(&mark_file, &mark);
+        return Some(dst);
+    }
+    let have = std::fs::read_to_string(&mark_file).unwrap_or_default();
+    let dst_size = std::fs::metadata(&dst).map(|m| m.len()).ok();
+    let cur_size = std::fs::metadata(&cur).map(|m| m.len()).ok();
+    let need = !dst.exists() || have.trim() != mark || dst_size != cur_size;
+    if need {
+        let _ = std::fs::create_dir_all(stable_dir());
+        let tmp = dst.with_extension("exe.new");
+        if std::fs::copy(&cur, &tmp).is_ok() {
+            let _ = std::fs::remove_file(dst.with_extension("exe.old"));
+            // запущенную копию заменить нельзя, но можно переименовать
+            if dst.exists() && std::fs::remove_file(&dst).is_err() {
+                let _ = std::fs::rename(&dst, dst.with_extension("exe.old"));
+            }
+            if std::fs::rename(&tmp, &dst).is_err() {
+                let _ = std::fs::remove_file(&tmp);
+                return dst.exists().then_some(dst);
+            }
+            let _ = std::fs::write(&mark_file, &mark);
+        }
+    }
+    dst.exists().then_some(dst)
+}
 
 // ------------------------------------------------------------ один экземпляр
 

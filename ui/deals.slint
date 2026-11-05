@@ -72,7 +72,7 @@ component TradeItemView inherits Rectangle {
 component TxnItemView inherits Rectangle {
     in property <TxnRow> item;
     height: 60px;
-    background: ta.has-hover && item.order != "" ? Theme.hover : transparent;
+    background: ta.has-hover ? Theme.hover : transparent;
     HorizontalLayout {
         padding-left: 16px;
         padding-right: 16px;
@@ -104,8 +104,14 @@ component TxnItemView inherits Rectangle {
     }
     Rectangle { x: 16px; y: parent.height - 1px; width: parent.width - 16px; height: 1px; background: Theme.line; }
     ta := TouchArea {
-        mouse-cursor: item.order != "" ? pointer : default;
-        clicked => { if (item.order != "") { Api.open-order(item.order); } }
+        mouse-cursor: pointer;
+        clicked => {
+            if (item.order != "") {
+                Api.open-order(item.order);
+            } else {
+                Api.open-txn(item.id);
+            }
+        }
     }
 }
 
@@ -125,6 +131,13 @@ export component DealsPane inherits Rectangle {
                     IconButton { icon: @image-url("icons/arrow_back.svg"); clicked => { Api.pane-back(); } }
                 }
                 Text { text: "Сделки"; color: Theme.ink; font-size: 15.5px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: @image-url("icons/bar_chart.svg");
+                        clicked => { Api.open-stats(); }
+                    }
+                }
                 VerticalLayout {
                     alignment: center;
                     IconButton {

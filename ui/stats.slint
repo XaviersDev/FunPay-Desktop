@@ -1,0 +1,143 @@
+// Статистика продаж и подробности операции из финансов.
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { StatTile, KV } from "types.slint";
+import { IconButton, Pill } from "widgets.slint";
+import { Card } from "extras.slint";
+
+component StatCell inherits VerticalLayout {
+    in property <StatTile> t;
+    in property <TextHorizontalAlignment> align: left;
+    spacing: 4px;
+    Text {
+        text: t.label;
+        color: Theme.muted;
+        font-size: 10.5px;
+        font-weight: 650;
+        letter-spacing: 0.6px;
+        horizontal-alignment: root.align;
+    }
+    Text {
+        text: t.value;
+        color: Theme.ink;
+        font-size: t.long ? 14.5px : 22px;
+        font-weight: t.long ? 650 : 700;
+        wrap: word-wrap;
+        horizontal-alignment: root.align;
+    }
+    if t.sub != "": Text {
+        text: t.sub;
+        color: Theme.muted;
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: root.align;
+    }
+}
+
+component Period inherits Rectangle {
+    in property <string> text;
+    in property <int> idx;
+    height: 30px;
+    width: pt.preferred-width + 22px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: St.stats-period == root.idx ? Theme.accent : Theme.line;
+    background: St.stats-period == root.idx ? Theme.accent.with-alpha(0.08) : pa.has-hover ? Theme.hover : transparent;
+    pt := Text { text: root.text; color: St.stats-period == root.idx ? Theme.accent : Theme.ink; font-size: 12.5px; font-weight: 600; }
+    pa := TouchArea { mouse-cursor: pointer; clicked => { Api.stats-period-set(root.idx); } }
+}
+
+export component StatsDialog inherits Card {
+    w: 720px;
+    close => { St.stats-open = false; }
+    property <length> cw: min(720px, root.width - 24px) - 48px;
+    VerticalLayout {
+        padding: 24px;
+        spacing: 18px;
+        HorizontalLayout {
+            spacing: 6px;
+            Text { text: "Статистика продаж"; color: Theme.ink; font-size: 19px; font-weight: 750; vertical-alignment: center; horizontal-stretch: 1; }
+            VerticalLayout { alignment: center; Period { text: "Сегодня"; idx: 0; } }
+            VerticalLayout { alignment: center; Period { text: "Неделя"; idx: 1; } }
+            VerticalLayout { alignment: center; Period { text: "Месяц"; idx: 2; } }
+            VerticalLayout { alignment: center; Period { text: "Всё время"; idx: 3; } }
+            VerticalLayout { alignment: center; IconButton { icon: @image-url("icons/close.svg"); clicked => { St.stats-open = false; } } }
+        }
+        Rectangle { height: 1px; background: Theme.line; }
+        if St.stats-loading || St.stats-tiles.length < 11: Rectangle {
+            height: 260px;
+            Pill { text: St.stats-note != "" ? St.stats-note : "Загружаю продажи"; }
+        }
+        if !St.stats-loading && St.stats-tiles.length >= 11: VerticalLayout {
+            spacing: 22px;
+            HorizontalLayout {
+                StatCell { t: St.stats-tiles[0]; width: root.cw / 3; }
+                StatCell { t: St.stats-tiles[1]; width: root.cw / 3; align: center; }
+                StatCell { t: St.stats-tiles[2]; width: root.cw / 3; align: right; }
+            }
+            HorizontalLayout {
+                StatCell { t: St.stats-tiles[3]; width: root.cw / 3; }
+                StatCell { t: St.stats-tiles[4]; width: root.cw / 3; align: center; }
+                StatCell { t: St.stats-tiles[5]; width: root.cw / 3; align: right; }
+            }
+            HorizontalLayout {
+                StatCell { t: St.stats-tiles[6]; width: root.cw / 3; }
+                StatCell { t: St.stats-tiles[7]; width: root.cw / 3; align: center; }
+                StatCell { t: St.stats-tiles[8]; width: root.cw / 3; align: right; }
+            }
+            Rectangle { height: 1px; background: Theme.line; }
+            HorizontalLayout {
+                StatCell { t: St.stats-tiles[9]; width: root.cw * 0.6; }
+                StatCell { t: St.stats-tiles[10]; width: root.cw * 0.4; align: right; }
+            }
+            if St.stats-note != "": Text { text: St.stats-note; color: Theme.faint; font-size: 11.5px; }
+        }
+    }
+}
+
+export component TxnDialog inherits Card {
+    w: 520px;
+    close => { St.txn-open = false; }
+    VerticalLayout {
+        padding: 22px;
+        spacing: 12px;
+        HorizontalLayout {
+            Text { text: "Информация об операции"; color: Theme.ink; font-size: 18px; font-weight: 700; vertical-alignment: center; horizontal-stretch: 1; }
+            IconButton { icon: @image-url("icons/close.svg"); clicked => { St.txn-open = false; } }
+        }
+        if St.txn-loading: Rectangle { height: 140px; Pill { text: "Загружаю"; } }
+        if !St.txn-loading && St.txn-error != "": Text { text: St.txn-error; color: Theme.danger; font-size: 13.5px; wrap: word-wrap; }
+        if !St.txn-loading && St.txn-error == "": VerticalLayout {
+            spacing: 0px;
+            for r in St.txn-rows: Rectangle {
+                height: rl.preferred-height;
+                background: ra.has-hover ? Theme.hover : transparent;
+                border-radius: 8px;
+                rl := HorizontalLayout {
+                    padding: 8px;
+                    spacing: 14px;
+                    Text { text: r.k; color: Theme.muted; font-size: 13px; width: 150px; wrap: word-wrap; }
+                    Text { text: r.v; color: Theme.ink; font-size: 13.5px; font-weight: 550; wrap: char-wrap; horizontal-stretch: 1; width: 290px; }
+                }
+                ra := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Api.copy-text(r.v); }
+                }
+            }
+            if St.txn-link != "": HorizontalLayout {
+                padding-top: 10px;
+                alignment: start;
+                Rectangle {
+                    height: 34px;
+                    width: lt.preferred-width + 28px;
+                    border-radius: 9px;
+                    background: la.has-hover ? Theme.accent.with-alpha(0.14) : Theme.field;
+                    lt := Text { text: "Открыть транзакцию"; color: Theme.accent; font-size: 13px; font-weight: 600; }
+                    la := TouchArea { mouse-cursor: pointer; clicked => { Api.open-external(St.txn-link); } }
+                }
+            }
+            Text { text: "Клик по строке копирует значение"; color: Theme.faint; font-size: 11.5px; }
+        }
+    }
+}

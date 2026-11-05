@@ -42,7 +42,7 @@ fn has_class(el: ElementRef, c: &str) -> bool {
 }
 
 /// Статус заказа в списке.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum TradeState {
     #[default]
     Closed,
@@ -50,7 +50,8 @@ pub enum TradeState {
     Refunded,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct TradeItem {
     pub id: String,
     pub state: TradeState,
@@ -424,4 +425,198 @@ pub fn txn_markup_summary(html: &str) -> String {
         }
     }
     seen.join(" | ")
+}
+
+// ---------------------------------------------------------------- статистика продаж
+
+/// Сводка по продажам за период, как в расширении.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SalesStats {
+    pub orders: usize,
+    pub earned: String,
+    pub avg: String,
+    pub closed: usize,
+    pub pending: usize,
+    pub pending_sum: String,
+    pub refunds: usize,
+    pub buyers: usize,
+    pub top_buyer: String,
+    pub max_sale: String,
+    pub top_item: String,
+    pub top_game: String,
+}
+
+fn money_text(sums: &[(String, f64)]) -> String {
+    let t: Vec<String> = sums.iter().filter(|(_, v)| *v > 0.0).map(|(c, v)| fmt_amount(*v, c).trim_start_matches('+').to_string()).collect();
+    if t.is_empty() {
+        "0".into()
+    } else {
+        t.join(", ")
+    }
+}
+
+fn add_sum(sums: &mut Vec<(String, f64)>, cur: &str, v: f64) {
+    match sums.iter_mut().find(|x| x.0 == cur) {
+        Some(x) => x.1 += v,
+        None => sums.push((cur.to_string(), v)),
+    }
+}
+
+/// Считает статистику по продажам, которые новее cutoff (None: все).
+pub fn sales_stats(list: &[TradeItem], cutoff: Option<chrono::NaiveDateTime>, now: chrono::NaiveDateTime) -> SalesStats {
+    use std::collections::HashMap;
+    let items: Vec<&TradeItem> = list
+        .iter()
+        .filter(|t| match cutoff {
+            None => true,
+            Some(c) => crate::parse::parse_fp_date(&t.date, now).map(|d| d >= c).unwrap_or(false),
+        })
+        .collect();
+    let mut s = SalesStats { orders: items.len(), ..Default::default() };
+    let mut earned = Vec::new();
+    let mut pending = Vec::new();
+    let mut buyers: HashMap<&str, usize> = HashMap::new();
+    let mut goods: HashMap<&str, usize> = HashMap::new();
+    let mut games: HashMap<&str, usize> = HashMap::new();
+    let mut max: (f64, String) = (0.0, String::new());
+    let mut counted = 0usize;
+    for t in &items {
+        let (v, cur) = parse_amount(&t.price);
+        match t.state {
+            TradeState::Closed => {
+                s.closed += 1;
+                add_sum(&mut earned, &cur, v);
+            }
+            TradeState::Paid => {
+                s.pending += 1;
+                add_sum(&mut pending, &cur, v);
+            }
+            TradeState::Refunded => s.refunds += 1,
+        }
+        if t.state != TradeState::Refunded {
+            counted += 1;
+            if v > max.0 {
+                max = (v, fmt_amount(v, &cur).trim_start_matches('+').to_string());
+            }
+        }
+        if !t.peer.is_empty() {
+            *buyers.entry(t.peer.as_str()).or_default() += 1;
+        }
+        if !t.desc.is_empty() {
+            *goods.entry(t.desc.as_str()).or_default() += 1;
+        }
+        if !t.game.is_empty() {
+            *games.entry(t.game.as_str()).or_default() += 1;
+        }
+    }
+    earned.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    s.earned = money_text(&earned);
+    s.avg = match earned.first() {
+        Some((c, v)) if counted > 0 && s.closed > 0 => fmt_amount(v / s.closed as f64, c).trim_start_matches('+').to_string(),
+        _ => "0".into(),
+    };
+    s.pending_sum = money_text(&pending);
+    s.buyers = buyers.len();
+    let top = |m: &HashMap<&str, usize>| m.iter().max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0))).map(|(k, n)| (k.to_string(), *n));
+    s.top_buyer = top(&buyers).filter(|x| x.1 > 1).map(|x| x.0).unwrap_or_else(|| "нет".into());
+    s.top_item = top(&goods).map(|x| x.0).unwrap_or_else(|| "нет".into());
+    s.top_game = top(&games).map(|x| x.0).unwrap_or_else(|| "нет".into());
+    s.max_sale = if max.1.is_empty() { "0".into() } else { max.1 };
+    s
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::*;
+    #[test]
+    fn counts() {
+        let now = chrono::NaiveDate::from_ymd_opt(2026, 11, 5).unwrap().and_hms_opt(12, 0, 0).unwrap();
+        let t = |st: TradeState, price: &str, peer: &str, date: &str| TradeItem { state: st, price: price.into(), peer: peer.into(), desc: "Ключ".into(), game: "Steam, Ключи".into(), date: date.into(), ..Default::default() };
+        let v = vec![
+            t(TradeState::Closed, "100 ₽", "a", "сегодня, 10:00"),
+            t(TradeState::Closed, "300 ₽", "a", "вчера, 10:00"),
+            t(TradeState::Paid, "50 ₽", "b", "сегодня, 11:00"),
+            t(TradeState::Refunded, "999 ₽", "c", "сегодня, 9:00"),
+            t(TradeState::Closed, "70 ₽", "d", "1 октября, 10:00"),
+        ];
+        let s = sales_stats(&v, Some(now - chrono::Duration::days(7)), now);
+        assert_eq!((s.orders, s.closed, s.pending, s.refunds, s.buyers), (4, 2, 1, 1, 3));
+        assert_eq!(s.earned, "400\u{a0}₽");
+        assert_eq!(s.avg, "200\u{a0}₽");
+        assert_eq!(s.top_buyer, "a");
+        assert_eq!(s.max_sale, "300\u{a0}₽");
+        assert_eq!(sales_stats(&v, None, now).orders, 5);
+    }
+}
+
+// ---------------------------------------------------------------- кэш продаж для статистики
+
+/// Все продажи, которые уже скачали: новые сверху. Хранится на диске по аккаунту.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct SalesCache {
+    pub items: Vec<TradeItem>,
+    /// токен страницы после самой старой скачанной
+    pub tail: String,
+    /// дошли до самой первой продажи
+    pub complete: bool,
+    /// когда обновляли сверху, unix-секунды
+    pub at: i64,
+}
+
+impl SalesCache {
+    fn path(uid: &str) -> std::path::PathBuf {
+        crate::config::dir().join(format!("sales_{uid}.json"))
+    }
+
+    pub fn load(uid: &str) -> Self {
+        std::fs::read_to_string(Self::path(uid)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    }
+
+    pub fn save(&self, uid: &str) {
+        if let Ok(t) = serde_json::to_string(self) {
+            let _ = std::fs::write(Self::path(uid), t);
+        }
+    }
+
+    /// Самая старая скачанная продажа.
+    pub fn oldest(&self, now: chrono::NaiveDateTime) -> Option<chrono::NaiveDateTime> {
+        self.items.iter().rev().find_map(|t| crate::parse::parse_fp_date(&t.date, now))
+    }
+
+    /// Хватает ли скачанного на период с cutoff.
+    pub fn covers(&self, cutoff: Option<chrono::NaiveDateTime>, now: chrono::NaiveDateTime) -> bool {
+        self.complete || matches!((cutoff, self.oldest(now)), (Some(c), Some(o)) if o <= c)
+    }
+
+    /// Страница сверху: новые продажи вперёд, у знакомых обновляем статус. Возвращает, было ли что-то новое.
+    pub fn merge_top(&mut self, page: &[TradeItem], fresh: &mut Vec<TradeItem>) -> bool {
+        let mut changed = false;
+        for t in page {
+            match self.items.iter_mut().find(|x| x.id == t.id) {
+                Some(x) => {
+                    if x.state != t.state || x.price != t.price {
+                        *x = t.clone();
+                        changed = true;
+                    }
+                }
+                None => {
+                    if !fresh.iter().any(|x| x.id == t.id) {
+                        fresh.push(t.clone());
+                        changed = true;
+                    }
+                }
+            }
+        }
+        changed
+    }
+
+    /// Страница из глубины: добавляем в конец то, чего ещё нет.
+    pub fn merge_tail(&mut self, page: &[TradeItem]) {
+        for t in page {
+            if !self.items.iter().any(|x| x.id == t.id) {
+                self.items.push(t.clone());
+            }
+        }
+    }
 }

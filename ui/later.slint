@@ -1,0 +1,167 @@
+// Отложенные сообщения и режим "Не беспокоить".
+import { ScrollView, Slider } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { SchedRow } from "types.slint";
+import { IconButton, PrimaryButton } from "widgets.slint";
+import { Field, OptRow } from "templates.slint";
+import { Card } from "extras.slint";
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    callback clicked();
+    height: 32px;
+    horizontal-stretch: 1;
+    preferred-width: 10px;
+    border-radius: 8px;
+    background: root.on ? Theme.accent.with-alpha(0.14) : ca.has-hover ? Theme.hover : Theme.field;
+    Text { text: root.text; color: root.on ? Theme.accent : Theme.ink; font-size: 12.5px; font-weight: root.on ? 650 : 500; }
+    ca := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+export component SchedDialog inherits Card {
+    w: 470px;
+    close => { St.sched-open = false; }
+    ScrollView {
+        height: min(sl.preferred-height, root.height - 48px);
+        content-width: self.visible-width;
+        sl := VerticalLayout {
+            padding: 20px;
+            spacing: 9px;
+            HorizontalLayout {
+                Text { text: "Отправить позже"; color: Theme.ink; font-size: 17px; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; }
+                IconButton { icon: @image-url("icons/close.svg"); clicked => { St.sched-open = false; } }
+            }
+            if St.sched-draft != "": Rectangle {
+                height: min(dt.preferred-height + 18px, 96px);
+                border-radius: 10px;
+                background: Theme.field;
+                clip: true;
+                dt := Text { x: 12px; y: 9px; width: parent.width - 24px; text: St.sched-draft; color: Theme.ink; font-size: 13.5px; wrap: word-wrap; }
+            }
+            if St.sched-draft != "": VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    Chip { text: "Через 15 минут"; clicked => { Api.sched-add(0); } }
+                    Chip { text: "Через час"; clicked => { Api.sched-add(1); } }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Chip { text: "Через 3 часа"; clicked => { Api.sched-add(2); } }
+                    Chip { text: "Завтра в 9:00"; clicked => { Api.sched-add(3); } }
+                }
+                Text { text: "Своё время"; color: Theme.muted; font-size: 12px; font-weight: 600; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Chip { text: "Сегодня"; on: St.sched-day == 0; clicked => { St.sched-day = 0; } }
+                    Chip { text: "Завтра"; on: St.sched-day == 1; clicked => { St.sched-day = 1; } }
+                    Chip { text: "Послезавтра"; on: St.sched-day == 2; clicked => { St.sched-day = 2; } }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Field { text <=> St.sched-time; placeholder: "18:30"; horizontal-stretch: 1; }
+                    PrimaryButton { width: 140px; height: 38px; text: "Запланировать"; clicked => { Api.sched-add(4); } }
+                }
+                if St.sched-error != "": Text { text: St.sched-error; color: Theme.danger; font-size: 12.5px; wrap: word-wrap; }
+            }
+            Rectangle {
+                height: wt.preferred-height + 18px;
+                border-radius: 10px;
+                background: #E39A2D1F;
+                wt := Text {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    text: "В момент отправки компьютер должен быть включён, программа запущена, а интернет работать. Если интернета не будет, сообщение уйдёт, как только он появится.";
+                    color: Theme.ink;
+                    font-size: 12.5px;
+                    wrap: word-wrap;
+                }
+            }
+            if St.sched-list.length > 0: Text { text: "Запланировано"; color: Theme.muted; font-size: 12px; font-weight: 600; }
+            for r in St.sched-list: Rectangle {
+                height: rl.preferred-height;
+                border-radius: 10px;
+                background: Theme.field;
+                rl := HorizontalLayout {
+                    padding: 10px;
+                    padding-left: 12px;
+                    spacing: 8px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text { text: r.when + ", " + r.chat; color: r.late ? #E39A2D : Theme.accent; font-size: 12px; font-weight: 650; overflow: elide; }
+                        Text { text: r.text; color: Theme.ink; font-size: 13px; overflow: elide; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton { size: 30px; icon-size: 17px; icon: @image-url("icons/send.svg"); clicked => { Api.sched-now(r.id); } }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton { size: 30px; icon-size: 17px; icon: @image-url("icons/close.svg"); clicked => { Api.sched-cancel(r.id); } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component DndDialog inherits Card {
+    w: 450px;
+    close => { St.dnd-open = false; }
+    VerticalLayout {
+        padding: 20px;
+        spacing: 8px;
+        HorizontalLayout {
+            Text { text: "Не беспокоить"; color: Theme.ink; font-size: 17px; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; }
+            IconButton { icon: @image-url("icons/close.svg"); clicked => { St.dnd-open = false; } }
+        }
+        Text {
+            text: St.dnd-active ? "Сейчас включено: уведомления и звук не приходят, сообщения копятся в чатах как обычно." : "Без всплывающих уведомлений и звука. Сообщения продолжают приходить в чаты.";
+            color: St.dnd-active ? Theme.accent : Theme.muted;
+            font-size: 12.5px;
+            wrap: word-wrap;
+        }
+        OptRow {
+            title: "Включить сейчас";
+            hint: "Пока не выключите";
+            checked: St.dnd-on;
+            toggled(v) => { St.dnd-on = v; Api.dnd-set("on", v ? 1 : 0); }
+        }
+        OptRow {
+            title: "По расписанию";
+            hint: St.dnd-schedule ? "Каждый день с " + St.dnd-from + ":00 до " + St.dnd-to + ":00" : "Например, ночью";
+            checked: St.dnd-schedule;
+            toggled(v) => { St.dnd-schedule = v; Api.dnd-set("schedule", v ? 1 : 0); }
+        }
+        if St.dnd-schedule: VerticalLayout {
+            spacing: 2px;
+            HorizontalLayout {
+                Text { text: "С"; color: Theme.muted; font-size: 12px; font-weight: 600; horizontal-stretch: 1; }
+                Text { text: St.dnd-from + ":00"; color: Theme.ink; font-size: 12.5px; font-weight: 650; }
+            }
+            Slider { minimum: 0; maximum: 23; value: St.dnd-from; changed(v) => { St.dnd-from = round(v); } released(v) => { Api.dnd-set("from", round(v)); } }
+            HorizontalLayout {
+                Text { text: "До"; color: Theme.muted; font-size: 12px; font-weight: 600; horizontal-stretch: 1; }
+                Text { text: St.dnd-to + ":00"; color: Theme.ink; font-size: 12.5px; font-weight: 650; }
+            }
+            Slider { minimum: 0; maximum: 23; value: St.dnd-to; changed(v) => { St.dnd-to = round(v); } released(v) => { Api.dnd-set("to", round(v)); } }
+        }
+        Rectangle { height: 1px; background: Theme.line; }
+        OptRow {
+            title: "Автоответ";
+            hint: "Один раз в каждый чат, пока режим включён";
+            checked: St.dnd-reply;
+            toggled(v) => { St.dnd-reply = v; Api.dnd-set("reply", v ? 1 : 0); }
+        }
+        if St.dnd-reply: Field {
+            multi: true;
+            height: 84px;
+            text <=> St.dnd-text;
+            placeholder: "Текст автоответа";
+            edited => { Api.dnd-text-set(self.text); }
+        }
+    }
+}

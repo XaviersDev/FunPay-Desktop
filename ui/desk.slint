@@ -1,0 +1,279 @@
+import { ScrollView, Slider } from "std-widgets.slint";
+import { WidgetCard } from "widget.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { IconButton, Toggle, PrimaryButton } from "widgets.slint";
+import { Field, Seg, OptRow, Label } from "templates.slint";
+import { Card } from "extras.slint";
+
+// ============================================================ прокси аккаунта
+
+export component ProxyDialog inherits Card {
+    w: 440px;
+    close => { St.proxy-open = false; }
+    VerticalLayout {
+        padding: 20px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 8px;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text { text: "Прокси аккаунта"; color: Theme.ink; font-size: 17px; font-weight: 650; }
+                Text { text: St.proxy-name; color: Theme.muted; font-size: 12.5px; overflow: elide; }
+            }
+            VerticalLayout {
+                alignment: start;
+                IconButton { icon: @image-url("icons/close.svg"); clicked => { St.proxy-open = false; } }
+            }
+        }
+        Text {
+            text: "Все запросы этого аккаунта к FunPay пойдут через прокси. У каждого аккаунта свой.";
+            color: Theme.muted;
+            font-size: 12.5px;
+            wrap: word-wrap;
+        }
+        Label { text: "Тип"; }
+        Seg {
+            items: ["HTTP", "HTTPS", "SOCKS5", "SOCKS4"];
+            value: St.proxy-kind;
+            picked(i) => { St.proxy-kind = i; St.proxy-state = 0; }
+        }
+        Label { text: "Адрес"; }
+        Field {
+            text <=> St.proxy-addr;
+            placeholder: "1.2.3.4:8080 или 1.2.3.4:8080:логин:пароль";
+            edited => { St.proxy-state = 0; }
+        }
+        Text {
+            text: "Подходят записи адрес:порт, адрес:порт:логин:пароль, логин:пароль@адрес:порт и ссылки вида socks5://...";
+            color: Theme.faint;
+            font-size: 11.5px;
+            wrap: word-wrap;
+        }
+        OptRow {
+            title: "Не запускать аккаунт без прокси";
+            hint: "Если прокси не ответит, аккаунт подождёт, пока он заработает, и напрямую к FunPay не пойдёт";
+            checked: St.proxy-strict;
+            toggled(v) => { St.proxy-strict = v; }
+        }
+        if St.proxy-state > 0: Rectangle {
+            height: st.preferred-height + 16px;
+            border-radius: 9px;
+            background: St.proxy-state == 2 ? Theme.accent.with-alpha(0.10) : St.proxy-state == 3 ? Theme.danger.with-alpha(0.10) : Theme.field;
+            st := Text {
+                x: 12px;
+                width: parent.width - 24px;
+                text: St.proxy-state == 1 ? "Проверяю..." : St.proxy-status;
+                color: St.proxy-state == 3 ? Theme.danger : Theme.ink;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            padding-top: 4px;
+            PrimaryButton { flat: true; text: "Проверить"; busy: St.proxy-state == 1; clicked => { Api.proxy-check(); } }
+            PrimaryButton { text: "Сохранить"; clicked => { Api.proxy-save(); } }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Text {
+                text: "Убрать прокси";
+                color: ca.has-hover ? Theme.danger : Theme.muted;
+                font-size: 12.5px;
+                ca := TouchArea { mouse-cursor: pointer; clicked => { Api.proxy-clear(); } }
+            }
+        }
+    }
+}
+
+// ============================================================ виджеты на рабочем столе и статус в Discord
+
+component KindRow inherits Rectangle {
+    in property <int> kind;
+    in property <string> title;
+    in property <string> hint;
+    in property <image> icon;
+    height: 52px;
+    border-radius: 10px;
+    background: ka.has-hover ? Theme.hover : Theme.field;
+    ka := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Api.widget-toggle(root.kind, !St.widget-on[root.kind]); }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 30px;
+                height: 30px;
+                border-radius: 8px;
+                background: Theme.accent.with-alpha(0.12);
+                Image { source: root.icon; width: 17px; colorize: Theme.accent; }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 1px;
+            Text { text: root.title; color: Theme.ink; font-size: 13.5px; font-weight: 600; }
+            Text { text: root.hint; color: Theme.muted; font-size: 11.5px; overflow: elide; }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked: St.widget-on[root.kind];
+                toggled(v) => { Api.widget-toggle(root.kind, v); }
+            }
+        }
+    }
+}
+
+component Chips inherits HorizontalLayout {
+    in property <[string]> items;
+    in property <int> value;
+    callback picked(int);
+    spacing: 6px;
+    for it[i] in root.items: Rectangle {
+        height: 30px;
+        horizontal-stretch: 1;
+        preferred-width: 10px;
+        border-radius: 8px;
+        background: root.value == i ? Theme.accent.with-alpha(0.14) : ca.has-hover ? Theme.hover : Theme.field;
+        Text { text: it; color: root.value == i ? Theme.accent : Theme.ink; font-size: 12.5px; font-weight: root.value == i ? 650 : 500; }
+        ca := TouchArea { mouse-cursor: pointer; clicked => { root.picked(i); } }
+    }
+}
+
+export component WidgetsDialog inherits Card {
+    w: 480px;
+    close => {
+        St.widgets-open = false;
+        if (St.wg-editing) { St.wg-editing = false; Api.desk-set("edit", false); }
+    }
+    ScrollView {
+        height: min(wl.preferred-height, root.height - 48px);
+        content-width: self.visible-width;
+        wl := VerticalLayout {
+        padding: 20px;
+        spacing: 8px;
+        HorizontalLayout {
+            Text { text: "Виджеты на рабочем столе"; color: Theme.ink; font-size: 17px; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; }
+            IconButton { icon: @image-url("icons/close.svg"); clicked => { root.close(); } }
+        }
+        Text {
+            text: St.widgets-top ? "Маленькие окна поверх всех программ. Их можно перетащить мышкой, клик открывает нужный раздел." : "Виджеты становятся частью рабочего стола: лежат под ярлыками и окнами, как обои. Нажимать на них нельзя, а передвинуть можно кнопкой \"Переставить\".";
+            color: Theme.muted;
+            font-size: 12.5px;
+            wrap: word-wrap;
+        }
+        KindRow { kind: 0; title: "Баланс"; hint: "Сколько денег на FunPay сейчас"; icon: @image-url("icons/receipt_long.svg"); }
+        KindRow { kind: 1; title: "Непрочитанные"; hint: "Сколько чатов ждут ответа и от кого"; icon: @image-url("icons/forum.svg"); }
+        KindRow { kind: 2; title: "Продажи за сегодня"; hint: "Число продаж, сумма и сколько ждут выполнения"; icon: @image-url("icons/storefront.svg"); }
+        KindRow { kind: 3; title: "Лоты"; hint: "Сколько лотов активно"; icon: @image-url("icons/short_text.svg"); }
+        // предпросмотр на "рабочем столе"
+        Rectangle {
+            height: 150px;
+            border-radius: 12px;
+            background: #5F7FA6;
+            clip: true;
+            WidgetCard {
+                label: "Баланс";
+                big: "12 480";
+                unit: "₽";
+                sub: "Обновлено в 14:20";
+                dark: St.wg-theme == 2 || (St.wg-theme == 0 && Theme.dark);
+                accent: Theme.accent;
+                size: St.wg-size;
+                alpha: St.wg-opacity / 100;
+                interactive: false;
+            }
+        }
+        Text { text: "Размер"; color: Theme.muted; font-size: 12px; font-weight: 600; }
+        Chips { items: ["Компактный", "Обычный", "Крупный"]; value: St.wg-size; picked(i) => { St.wg-size = i; Api.wg-style("size", i); } }
+        Text { text: "Тема"; color: Theme.muted; font-size: 12px; font-weight: 600; }
+        Chips { items: ["Как в программе", "Светлая", "Тёмная"]; value: St.wg-theme; picked(i) => { St.wg-theme = i; Api.wg-style("theme", i); } }
+        HorizontalLayout {
+            Text { text: "Фон"; color: Theme.muted; font-size: 12px; font-weight: 600; horizontal-stretch: 1; }
+            Text { text: St.wg-opacity == 0 ? "без фона" : round(St.wg-opacity) + "%"; color: Theme.ink; font-size: 12.5px; font-weight: 650; }
+        }
+        Slider {
+            minimum: 0;
+            maximum: 100;
+            value: St.wg-opacity;
+            changed(v) => { St.wg-opacity = round(v); }
+            released(v) => { Api.wg-style("opacity", round(v)); }
+        }
+        Text { text: "Где"; color: Theme.muted; font-size: 12px; font-weight: 600; }
+        Chips { items: ["На рабочем столе", "Поверх всех окон"]; value: St.widgets-top ? 1 : 0; picked(i) => { St.widgets-top = i == 1; Api.desk-set("top", i == 1); } }
+        if !St.widgets-top: HorizontalLayout {
+            alignment: start;
+            PrimaryButton {
+                width: 220px;
+                height: 38px;
+                flat: !St.wg-editing;
+                text: St.wg-editing ? "Готово" : "Переставить";
+                clicked => { St.wg-editing = !St.wg-editing; Api.desk-set("edit", St.wg-editing); }
+            }
+        }
+        if St.wg-editing: Text { text: "Перетащите виджеты мышкой куда удобно и нажмите \"Готово\"."; color: Theme.accent; font-size: 12.5px; wrap: word-wrap; }
+        HorizontalLayout {
+            alignment: start;
+            Text {
+                text: "Вернуть виджеты в угол экрана";
+                color: ra.has-hover ? Theme.accent : Theme.muted;
+                font-size: 12.5px;
+                ra := TouchArea { mouse-cursor: pointer; clicked => { Api.widgets-reset(); } }
+            }
+        }
+    }
+    }
+}
+
+export component DiscordDialog inherits Card {
+    w: 440px;
+    close => { St.rpc-open = false; }
+    VerticalLayout {
+        padding: 20px;
+        spacing: 8px;
+        HorizontalLayout {
+            Text { text: "Статус в Discord"; color: Theme.ink; font-size: 17px; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; }
+            IconButton { icon: @image-url("icons/close.svg"); clicked => { St.rpc-open = false; } }
+        }
+        OptRow {
+            title: "Показывать статус";
+            hint: "В профиле Discord будет видно, что вы работаете в FunPay Tools";
+            checked: St.rpc-on;
+            toggled(v) => { St.rpc-on = v; Api.desk-set("rpc", v); }
+        }
+        if St.rpc-on: OptRow {
+            title: "Показывать ник FunPay";
+            hint: "И кнопку на ваш профиль";
+            checked: St.rpc-nick;
+            toggled(v) => { St.rpc-nick = v; Api.desk-set("nick", v); }
+        }
+        if St.rpc-on: OptRow {
+            title: "Показывать продажи за сегодня";
+            checked: St.rpc-sales;
+            toggled(v) => { St.rpc-sales = v; Api.desk-set("sales", v); }
+        }
+        Rectangle {
+            height: rs.preferred-height + 18px;
+            border-radius: 9px;
+            background: Theme.field;
+            rs := Text {
+                x: 12px;
+                width: parent.width - 24px;
+                text: St.rpc-on && St.rpc-status != "" ? St.rpc-status : "Discord должен быть запущен на этом компьютере: статус передаётся программе Discord, а не через интернет.";
+                color: Theme.muted;
+                font-size: 12.5px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

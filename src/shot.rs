@@ -30,6 +30,53 @@ pub fn run(spec: &str) {
     window.set_size(PhysicalSize::new(w, h));
     slint::platform::set_platform(Box::new(ShotPlatform(window.clone()))).unwrap();
 
+    // виджет рабочего стола: widget0..widget3, размер задаёт масштаб
+    if let Some(k) = scene.strip_prefix("widget") {
+        let size = if k.ends_with('c') { 0 } else if k.ends_with('l') { 2 } else { 1 };
+        let kind: i32 = k.trim_end_matches(['c', 'l']).parse().unwrap_or(0);
+        let wdg = crate::WidgetWindow::new().unwrap();
+        wdg.set_size(size);
+        let base = match size {
+            0 => 200.0,
+            2 => 216.0 * 1.22,
+            _ => 216.0,
+        };
+        window.dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged { scale_factor: w as f32 / base });
+        let d = crate::widgets::Data {
+            balance: "12 480 ₽".into(),
+            balance_at: "14:20".into(),
+            unread: 3,
+            unread_names: vec!["vlad_storm".into(), "darkness21".into(), "k1rill".into()],
+            sales: Some((7, "4 230 ₽".into(), 2)),
+            lots: Some((42, 50)),
+        };
+        let (label, big, unit, sub) = crate::widgets::content(kind, &d);
+        let label = if size == 0 { ["Баланс", "Непрочитанные", "Продажи сегодня", "Активные лоты"][kind.clamp(0, 3) as usize].to_string() } else { label };
+        let unit = if size == 0 && kind == 3 { String::new() } else { unit };
+        wdg.set_label(label.into());
+        wdg.set_big(big.into());
+        wdg.set_unit(unit.into());
+        wdg.set_sub(sub.into());
+        wdg.set_dark(dark);
+        wdg.set_shown(true);
+        wdg.set_accent(slint::Color::from_rgb_u8(0x2D, 0x8C, 0xFF));
+        wdg.show().unwrap();
+        let mut buf = vec![Rgb8Pixel::default(); (w * h) as usize];
+        for _ in 0..4 {
+            slint::platform::update_timers_and_animations();
+            window.request_redraw();
+            window.draw_if_needed(|r| {
+                r.render(&mut buf, w as usize);
+            });
+        }
+        let mut img = image::RgbImage::new(w, h);
+        for (i, p) in buf.iter().enumerate() {
+            img.put_pixel(i as u32 % w, i as u32 / w, image::Rgb([p.r, p.g, p.b]));
+        }
+        img.save(path).unwrap();
+        return;
+    }
+
     let app = AppWindow::new().unwrap();
     let cfg = std::sync::Arc::new(std::sync::Mutex::new(crate::config::Config { theme: if dark { 2 } else { 1 }, ..Default::default() }));
     let (tx, _rx) = std::sync::mpsc::channel();
@@ -59,6 +106,9 @@ pub fn run(spec: &str) {
         crate::ui::with_ui(|u| u.close_chat());
     }
     app.show().unwrap();
+    if scene == "pluginoff" {
+        app.window().dispatch_event(slint::platform::WindowEvent::PointerMoved { position: slint::LogicalPosition::new(520.0, 400.0) });
+    }
     if scene == "typing" {
         use slint::platform::{Key, WindowEvent};
         let win = app.window();

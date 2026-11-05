@@ -3,6 +3,14 @@
 mod ai;
 mod anim;
 mod feat3;
+mod feat4;
+mod plugins;
+mod discord;
+mod feat5;
+mod feat6;
+mod proxy;
+mod wallpaper;
+mod widgets;
 mod album;
 mod browser;
 mod cache;
@@ -61,6 +69,19 @@ fn main() {
     let _ = slint::BackendSelector::new()
         .with_winit_window_attributes_hook(|attrs| {
             // окно уведомления: без рамки, поверх всех, без кнопки на панели задач и без фокуса
+            // виджет на рабочем столе: без рамки и кнопки на панели задач, под окнами или поверх
+            if widgets::creating() {
+                use slint::winit_030::winit::window::WindowLevel;
+                let level = if widgets::on_top() { WindowLevel::AlwaysOnTop } else { WindowLevel::AlwaysOnBottom };
+                let a = attrs.with_decorations(false).with_window_level(level).with_active(false).with_resizable(false);
+                #[cfg(windows)]
+                {
+                    use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
+                    return a.with_skip_taskbar(true);
+                }
+                #[allow(unreachable_code)]
+                return a;
+            }
             if popup::creating() {
                 use slint::winit_030::winit::window::WindowLevel;
                 let a = attrs.with_decorations(false).with_window_level(WindowLevel::AlwaysOnTop).with_active(false).with_resizable(false);
@@ -84,6 +105,8 @@ fn main() {
 
     let cfg = Arc::new(Mutex::new(config::Config::load()));
     fp::set_ua(&cfg.lock().unwrap().user_agent);
+    plugins::init(cfg.clone());
+    proxy::init(cfg.clone());
     let app = AppWindow::new().expect("не удалось создать окно");
     let demo = std::env::var("FPT_DEMO").is_ok();
     let (tx, rx) = std::sync::mpsc::channel::<Cmd>();
@@ -182,6 +205,24 @@ fn main() {
             Some(tray::Action::Quit) => quit_app(),
             None => {}
         }
+    });
+
+    // виджеты и Discord: сводка с FunPay раз в 5 минут
+    let stats = slint::Timer::default();
+    stats.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(300), || {
+        with_ui(|u| u.stats_tick());
+    });
+    slint::Timer::single_shot(std::time::Duration::from_millis(600), || {
+        with_ui(|u| {
+            u.sync_desk();
+            u.sync_dnd();
+            u.rebuild_sched();
+        });
+    });
+    // отложенные сообщения и расписание "Не беспокоить"
+    let later = slint::Timer::default();
+    later.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(15), || {
+        with_ui(|u| u.sched_tick());
     });
 
     // фон: значок в трее, автозапуск, второй запуск показывает это окно
@@ -648,6 +689,28 @@ pub fn setup(app: &AppWindow, cfg: Arc<Mutex<config::Config>>, tx: std::sync::mp
         });
     });
     api.on_set_notifications(|v| set_cfg(|c| c.notifications = v));
+    api.on_pop_sound(|| sys::play_sound());
+    api.on_pack_open(|i| post(move |u| u.pack_open(i)));
+    api.on_pack_item_set(|i, f, v| post(move |u| u.pack_item_set(i, f, v.to_string())));
+    api.on_pack_item_toggle(|i, v| post(move |u| u.pack_item_toggle(i, v)));
+    api.on_pack_apply(|| post(|u| u.pack_apply()));
+    api.on_open_sched(|t| post(move |u| u.open_sched(t.to_string())));
+    api.on_sched_add(|p| post(move |u| u.sched_add(p)));
+    api.on_sched_cancel(|id| post(move |u| u.sched_cancel(id.to_string())));
+    api.on_sched_now(|id| post(move |u| u.sched_now(id.to_string())));
+    api.on_dnd_set(|k, v| post(move |u| u.dnd_set(&k, v)));
+    api.on_dnd_text_set(|t| post(move |u| u.dnd_text_set(t.to_string())));
+    api.on_open_stats(|| post(|u| u.open_stats()));
+    api.on_stats_period_set(|p| post(move |u| u.stats_period_set(p)));
+    api.on_open_txn(|id| post(move |u| u.open_txn(id.to_string())));
+    api.on_open_proxy(|id| post(move |u| u.open_proxy(id.to_string())));
+    api.on_proxy_check(|| post(|u| u.proxy_check()));
+    api.on_proxy_save(|| post(|u| u.proxy_save()));
+    api.on_proxy_clear(|| post(|u| u.proxy_clear()));
+    api.on_widget_toggle(|k, v| post(move |u| u.widget_toggle(k, v)));
+    api.on_desk_set(|k, v| post(move |u| u.desk_set(&k, v)));
+    api.on_widgets_reset(|| post(|u| u.widgets_reset()));
+    api.on_wg_style(|k, v| post(move |u| u.wg_style(&k, v)));
     api.on_set_sound(|v| {
         set_cfg(|c| c.sound = v);
         if v {
@@ -722,6 +785,20 @@ fn setup_features(app: &AppWindow, cfg: Arc<Mutex<config::Config>>, demo: bool) 
     api.on_lot_lang_set(|i| {
         with_ui(|u| u.lot_lang(i));
     });
+    api.on_open_plugins(|| with_ui(|u| u.open_plugins()).unwrap_or(()));
+    api.on_plugin_toggle(|id, v| with_ui(|u| u.plugin_toggle(id.to_string(), v)).unwrap_or(()));
+    api.on_plugin_open(|id| with_ui(|u| u.plugin_open(id.to_string())).unwrap_or(()));
+    api.on_plugin_close(|| with_ui(|u| u.plugin_close()).unwrap_or(()));
+    api.on_plugin_ui_click(|c| with_ui(|u| u.plugin_ui_click(c.to_string())).unwrap_or(()));
+    api.on_plugin_ui_set(|k, v, c| with_ui(|u| u.plugin_ui_set(k.to_string(), v.to_string(), c.to_string())).unwrap_or(()));
+    api.on_plugin_install_file(|| with_ui(|u| u.plugin_install_file()).unwrap_or(()));
+    api.on_plugin_delete(|| with_ui(|u| u.plugin_delete()).unwrap_or(()));
+    api.on_plugin_docs(|| with_ui(|u| u.plugin_docs()).unwrap_or(()));
+    api.on_plugin_ask_answer(|a| with_ui(|u| u.plugin_ask_answer(a)).unwrap_or(()));
+    api.on_open_catalog(|t| with_ui(|u| u.open_catalog(t)).unwrap_or(()));
+    api.on_cat_install(|i| with_ui(|u| u.cat_install(i)).unwrap_or(()));
+    api.on_cat_pack_flag(|i, w, v| with_ui(|u| u.cat_pack_flag(i, w, v)).unwrap_or(()));
+    api.on_cat_pack_add(|i| with_ui(|u| u.cat_pack_add(i)).unwrap_or(()));
     api.on_lot_edit(|id| {
         with_ui(|u| u.lot_edit(id.to_string()));
     });

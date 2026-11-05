@@ -429,9 +429,11 @@ export component SettingsView inherits Rectangle {
                         }
                     }
                     // аккаунты: переключение, добавление, удаление (всё хранится на этом ПК)
-                    for a in St.accounts: Rectangle {
+                    for a in St.accounts: arow := Rectangle {
+                        // наведение на кнопки внутри строки тоже считается наведением на строку
+                        property <bool> hot: ara.has-hover || pxb.hovered || rmb.hovered;
                         height: 52px;
-                        background: ara.has-hover ? Theme.hover : transparent;
+                        background: self.hot ? Theme.hover : transparent;
                         ara := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { Api.switch-account(a.id); }
@@ -439,7 +441,7 @@ export component SettingsView inherits Rectangle {
                         HorizontalLayout {
                             padding-left: 18px;
                             padding-right: 10px;
-                            spacing: 14px;
+                            spacing: 8px;
                             VerticalLayout {
                                 alignment: center;
                                 Avatar { size: 34px; img: a.avatar; has-img: a.has-avatar; letter: a.letter; c1: #8E9BFF; c2: #5B6CF0; }
@@ -453,16 +455,33 @@ export component SettingsView inherits Rectangle {
                                 overflow: elide;
                                 horizontal-stretch: 1;
                             }
+                            // кнопки есть всегда, просто прозрачные без наведения: так ничего не мигает
+                            VerticalLayout {
+                                alignment: center;
+                                pxb := IconButton {
+                                    size: 30px;
+                                    icon-size: 17px;
+                                    icon: @image-url("icons/vpn_lock.svg");
+                                    tint: a.proxy ? Theme.accent : Theme.muted;
+                                    opacity: a.proxy || arow.hot ? 1 : 0;
+                                    clicked => { Api.open-proxy(a.id); }
+                                }
+                            }
                             if a.active: VerticalLayout {
                                 alignment: center;
-                                Image { source: @image-url("icons/check_circle.svg"); width: 20px; colorize: Theme.accent; }
+                                Rectangle {
+                                    width: 30px;
+                                    Image { source: @image-url("icons/check_circle.svg"); width: 20px; colorize: Theme.accent; }
+                                }
                             }
-                            if !a.active && ara.has-hover: VerticalLayout {
+                            VerticalLayout {
                                 alignment: center;
-                                IconButton {
+                                rmb := IconButton {
                                     size: 30px;
                                     icon-size: 17px;
                                     icon: @image-url("icons/close.svg");
+                                    visible: !a.active;
+                                    opacity: arow.hot ? 1 : 0;
                                     clicked => { Api.remove-account(a.id); }
                                 }
                             }
@@ -534,11 +553,25 @@ export component SettingsView inherits Rectangle {
                         clicked => { St.notes-open = true; }
                     }
                     SettingRow {
+                        icon: @image-url("icons/notifications_off.svg");
+                        title: "Не беспокоить";
+                        hint: St.dnd-active ? "Включено сейчас" : St.dnd-schedule ? "По расписанию с " + St.dnd-from + ":00 до " + St.dnd-to + ":00" : "Без уведомлений и звука, с автоответом";
+                        has-toggle: false;
+                        clicked => { St.dnd-open = true; }
+                    }
+                    SettingRow {
                         icon: @image-url("icons/push_pin.svg");
                         title: "Поверх всех окон";
                         hint: "Удобно, если сжать окно до маленького";
                         checked: St.on-top;
                         toggled(v) => { Api.set-on-top(v); }
+                    }
+                    SettingRow {
+                        icon: @image-url("icons/discord.svg");
+                        title: "Статус в Discord";
+                        hint: St.rpc-on ? "Включён" : "Показывать в профиле, что вы работаете в FunPay Tools";
+                        has-toggle: false;
+                        clicked => { St.rpc-open = true; }
                     }
                     if St.tray-ok: SettingRow {
                         icon: @image-url("icons/notifications_active.svg");

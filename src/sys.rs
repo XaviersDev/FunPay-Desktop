@@ -105,12 +105,26 @@ pub fn notify_with_icon(title: &str, body: &str, icon: bool, on_click: impl Fn()
 
 static ARROWS_PNG: &[u8] = include_bytes!("../ui/icons/arrows128.png");
 
+/// Громкость звука уведомлений, 0..100 (задаётся из настроек).
+static VOLUME: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(80);
+
+pub fn set_volume(v: i32) {
+    VOLUME.store(v.clamp(0, 100), std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Звук уведомления из мобильного приложения (funpay_push.mp3).
 pub fn play_sound() {
+    let v = VOLUME.load(std::sync::atomic::Ordering::Relaxed);
+    if v <= 0 {
+        return;
+    }
     #[cfg(windows)]
-    std::thread::spawn(|| {
+    std::thread::spawn(move || {
         let Ok(stream) = rodio::OutputStreamBuilder::open_default_stream() else { return };
         let sink = rodio::Sink::connect_new(stream.mixer());
+        // громкость по слуху: квадрат делает ползунок ровнее
+        let k = v as f32 / 100.0;
+        sink.set_volume(k * k);
         if let Ok(src) = rodio::Decoder::new(std::io::Cursor::new(PUSH_MP3)) {
             sink.append(src);
             sink.sleep_until_end();

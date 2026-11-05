@@ -195,6 +195,7 @@ export struct AccountRow {
     avatar: image,
     has-avatar: bool,
     active: bool,
+    proxy: bool,
 }
 
 // кнопка-шаблон
@@ -277,4 +278,115 @@ export struct ThemeCard {
     has-preview: bool,
     c1: color,
     c2: color,
+}
+
+// плагин в списке
+export struct PluginRow {
+    id: string,
+    name: string,
+    author: string,
+    version: string,
+    description: string,
+    on: bool,
+    builtin: bool,
+}
+
+// элемент интерфейса плагина внутри строки (Row)
+export struct PCell {
+    kind: string,       // text | button | switch | checkbox
+    text: string,
+    key: string,
+    value: string,
+    click: string,      // код для onClick
+    change: string,     // код для onChange
+    style: string,      // flat у кнопки
+    bold: bool,
+    has-color: bool,
+    color: color,
+    busy-text: string,
+}
+
+// строка интерфейса плагина (дерево из JSON разворачивается в список)
+export struct PUiRow {
+    kind: string,       // text | button | switch | checkbox | input | slider | select | image | divider | spacer | row
+    text: string,
+    label: string,
+    key: string,
+    value: string,
+    click: string,
+    change: string,
+    style: string,
+    bold: bool,
+    size: float,
+    has-color: bool,
+    color: color,
+    single: bool,
+    min: float,
+    max: float,
+    options: [string],
+    img: image,
+    has-img: bool,
+    height: float,
+    radius: float,
+    in-card: bool,
+    card-first: bool,
+    card-last: bool,
+    cells: [PCell],
+    busy-text: string,
+}
+
+// плагин из каталога
+export struct CatPlugin {
+    idx: int,
+    name: string,
+    description: string,
+    banner: image,
+    has-banner: bool,
+    installed: bool,
+    busy: bool,
+}
+
+// пак текстовых шаблонов из каталога funpay.tools/catalog
+export struct CatPack {
+    idx: int,
+    name: string,
+    author: string,
+    description: string,
+    tpl-count: int,
+    has-reviews: bool,
+    has-review-ask: bool,
+    use-tpl: bool,
+    use-reviews: bool,
+    use-review-ask: bool,
+    added: bool,
+}
+
+// плитка статистики продаж
+export struct StatTile {
+    label: string,
+    value: string,
+    sub: string,
+    // длинный текст: шрифт меньше и с переносом
+    long: bool,
+}
+
+// отложенное сообщение
+export struct SchedRow {
+    id: string,
+    chat: string,
+    text: string,
+    when: string,
+    late: bool,
+}
+
+// строка предпросмотра пака шаблонов
+export struct PackItem {
+    idx: int,
+    // заголовок раздела над первой строкой раздела
+    section: string,
+    title: string,
+    a: string,
+    a-label: string,
+    b: string,
+    on: bool,
 }

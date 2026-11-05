@@ -195,6 +195,7 @@ pub fn show(main: &crate::AppWindow, n: Note, cfg: &PopupCfg, dark: bool, accent
     CREATING.store(false, Ordering::Relaxed);
     // позиция ещё раз: окно уже создано системой
     layout(main, cfg.corner);
+    crate::widgets::round_corners(win.window());
     ensure_timer();
 }
 

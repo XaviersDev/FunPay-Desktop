@@ -43,6 +43,16 @@ pub enum Cmd {
     UseAccount { gk: String, cookies: std::collections::BTreeMap<String, String> },
     /// Сколько в заморозке: финансы и закрытые продажи за 48 часов
     LoadFrozen,
+    /// сводка для виджетов и Discord: баланс, продажи за сегодня, лоты
+    Stats { lots: bool },
+    /// сообщение в любой чат (отложенное или автоответ); id пустой, если результат не нужен
+    SendTo { id: String, chat: String, text: String },
+    /// статистика продаж за последние days дней (0: за всё время)
+    SalesStats { days: i64, gen: u64 },
+    /// подробности операции из финансов
+    TxnInfo { id: String, gen: u64 },
+    /// у текущего аккаунта поменялся прокси
+    ProxyChanged,
     /// Мои лоты
     LoadLots { gen: u64 },
     LotForm { id: String, gen: u64 },
@@ -134,6 +144,113 @@ impl Worker {
             }
         }
         Me { id: fp.app.user_id.clone(), name: fp.app.username.clone(), avatar, balance: fp.app.balance.clone() }
+    }
+
+    /// Страница продаж с повтором, если FunPay просит не спешить (429).
+    fn trade_page_patient(&mut self, cont: &str) -> Result<(Vec<crate::money::TradeItem>, String), String> {
+        let mut wait = 4;
+        for _ in 0..5 {
+            let Some(fp) = self.fp.as_mut() else { return Err("Нет входа в аккаунт".into()) };
+            match fp.trade_page(true, "", cont) {
+                Err(e) if e.contains("429") => {
+                    std::thread::sleep(std::time::Duration::from_secs(wait));
+                    wait *= 2;
+                }
+                r => return r,
+            }
+        }
+        Err("FunPay просит подождать (429)".into())
+    }
+
+    /// Продажи для статистики: из кэша, докачиваем только новое сверху и, если надо, старое снизу.
+    /// Между страницами пауза, чтобы FunPay не ограничивал.
+    fn sales_stats(&mut self, cutoff: Option<chrono::NaiveDateTime>, gen: u64) -> Result<(Vec<crate::money::TradeItem>, String), String> {
+        let uid = self.fp.as_ref().map(|f| f.app.user_id.clone()).unwrap_or_default();
+        if uid.is_empty() || uid == "0" {
+            return Err("Нет входа в аккаунт".into());
+        }
+        let now = crate::fp::now_msk();
+        let mut cache = crate::money::SalesCache::load(&uid);
+        let pause = std::time::Duration::from_millis(900);
+        let mut pages = 0;
+        let mut note = String::new();
+        let report = |n: usize| post(move |u| u.stats_progress(gen, n));
+        // свежее сверху: пока попадаются новые продажи или поменялись статусы
+        let recent = chrono::Utc::now().timestamp() - cache.at < 90;
+        if !(recent && cache.covers(cutoff, now)) {
+            let mut fresh = Vec::new();
+            let mut cont = String::new();
+            let empty = cache.items.is_empty();
+            loop {
+                if pages > 0 {
+                    std::thread::sleep(pause);
+                }
+                let (items, next) = match self.trade_page_patient(&cont) {
+                    Ok(x) => x,
+                    Err(e) if pages > 0 || !cache.items.is_empty() => {
+                        note = format!("{e}. Показано то, что успели загрузить");
+                        break;
+                    }
+                    Err(e) => return Err(e),
+                };
+                pages += 1;
+                let changed = cache.merge_top(&items, &mut fresh);
+                report(cache.items.len() + fresh.len());
+                let past_cutoff = cutoff.is_some_and(|c| items.iter().filter_map(|t| crate::parse::parse_fp_date(&t.date, now)).any(|d| d < c));
+                if next.is_empty() {
+                    if empty {
+                        cache.complete = true;
+                    }
+                    if empty {
+                        cache.tail.clear();
+                    }
+                    break;
+                }
+                if empty {
+                    cache.tail = next.clone();
+                }
+                // дальше всё уже есть в кэше
+                if !empty && !changed {
+                    break;
+                }
+                if empty && past_cutoff {
+                    break;
+                }
+                if pages >= 80 {
+                    break;
+                }
+                cont = next;
+            }
+            fresh.extend(std::mem::take(&mut cache.items));
+            cache.items = fresh;
+            cache.at = chrono::Utc::now().timestamp();
+            cache.save(&uid);
+        }
+        // старое снизу, если кэш ещё не дотягивает до начала периода
+        while !cache.covers(cutoff, now) && !cache.tail.is_empty() && pages < 80 {
+            std::thread::sleep(pause);
+            let tail = cache.tail.clone();
+            match self.trade_page_patient(&tail) {
+                Ok((items, next)) => {
+                    pages += 1;
+                    cache.merge_tail(&items);
+                    cache.tail = next.clone();
+                    if next.is_empty() {
+                        cache.complete = true;
+                    }
+                    cache.save(&uid);
+                    report(cache.items.len());
+                }
+                Err(e) => {
+                    note = format!("{e}. Показано то, что успели загрузить");
+                    break;
+                }
+            }
+        }
+        if !cache.covers(cutoff, now) && note.is_empty() && pages >= 80 {
+            note = "Загрузил часть продаж, откройте статистику ещё раз, чтобы догрузить остальное".into();
+        }
+        Ok((cache.items, note))
     }
 
     fn startup(&mut self) {
@@ -270,6 +387,50 @@ impl Worker {
                     let res = fp.trade_page(tab == 0, &state, &cont);
                     self.save_cookies();
                     post(move |u| u.trade_loaded(gen, append, res));
+                }
+            }
+            Cmd::Stats { lots } => {
+                let Some(fp) = self.fp.as_mut() else { return };
+                let r = fp.stats(lots);
+                self.save_cookies();
+                post(move |u| u.stats_loaded(r));
+            }
+            Cmd::SalesStats { days, gen } => {
+                let now = crate::fp::now_msk();
+                let cutoff = match days {
+                    0 => None,
+                    1 => Some(now.date().and_hms_opt(0, 0, 0).unwrap()),
+                    d => Some(now - chrono::Duration::days(d)),
+                };
+                let res = self.sales_stats(cutoff, gen).map(|(items, note)| (crate::money::sales_stats(&items, cutoff, now), note));
+                self.save_cookies();
+                post(move |u| u.stats_loaded_full(gen, res));
+            }
+            Cmd::SendTo { id, chat, text } => {
+                let res = match self.fp.as_mut() {
+                    Some(fp) => fp.send_message(&chat, &text, None),
+                    None => Err("Нет входа в аккаунт".into()),
+                };
+                self.save_cookies();
+                self.force_poll = true;
+                if !id.is_empty() {
+                    post(move |u| u.sched_result(id, res));
+                }
+            }
+            Cmd::TxnInfo { id, gen } => {
+                let Some(fp) = self.fp.as_mut() else { return };
+                let res = fp.transaction_info(&id);
+                post(move |u| u.txn_loaded(gen, res));
+            }
+            Cmd::ProxyChanged => {
+                let Some(fp) = self.fp.as_mut() else { return };
+                fp.reload_proxy();
+                match fp.proxy_gate() {
+                    Ok(()) => {
+                        post(|u| u.net_error(String::new()));
+                        self.force_poll = true;
+                    }
+                    Err(e) => post(move |u| u.net_error(e)),
                 }
             }
             Cmd::LoadFrozen => {
@@ -835,6 +996,8 @@ impl Worker {
         };
         let open_id = self.open.as_ref().map(|o| o.id.clone());
         let mut fresh = Vec::new();
+        // чаты с новыми сообщениями для плагинов (с прошлым id, чтобы взять только новое)
+        let mut changed = Vec::new();
         for c in chats {
             let prev = self.known.insert(c.id.clone(), c.node_msg);
             if self.first_poll {
@@ -847,6 +1010,7 @@ impl Worker {
             if !is_new {
                 continue;
             }
+            changed.push((c.clone(), prev.unwrap_or(0)));
             if let Some(mine) = outgoing.get(&c.id) {
                 let p = c.preview.trim_end_matches("...").trim().to_lowercase();
                 if !p.is_empty() && mine.to_lowercase().starts_with(&p) {
@@ -862,6 +1026,7 @@ impl Worker {
             fresh.push(c.clone());
         }
         self.first_poll = false;
+        crate::plugins::chats_changed(changed);
         if !fresh.is_empty() {
             post(move |u| u.incoming(fresh));
         }

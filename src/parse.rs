@@ -1130,3 +1130,100 @@ mod tests_reviews {
         assert_eq!(r[1].order, "JPAL2G1C");
     }
 }
+
+
+/// Раздел своих лотов на странице профиля: id раздела, игра (если указана) и название.
+#[derive(Debug, Clone, Default)]
+pub struct RaiseGroup {
+    pub node: String,
+    pub game: String,
+    pub title: String,
+}
+
+static S_OFFER_TITLE_BOX: Lazy<Selector> = Lazy::new(|| sel("div.offer-list-title-container"));
+static S_OFFER_TITLE_A: Lazy<Selector> = Lazy::new(|| sel("h3 a"));
+static RE_LOTS_NODE: Lazy<Regex> = Lazy::new(|| Regex::new(r"/lots/(\d+)").unwrap());
+
+pub fn parse_raise_groups(html: &str) -> Vec<RaiseGroup> {
+    let doc = Html::parse_document(html);
+    let mut out = Vec::new();
+    for div in doc.select(&S_OFFER_TITLE_BOX) {
+        let Some(a) = div.select(&S_OFFER_TITLE_A).next() else { continue };
+        let href = a.value().attr("href").unwrap_or("");
+        if href.contains("/chips/") {
+            continue;
+        }
+        let Some(node) = RE_LOTS_NODE.captures(href).map(|c| c[1].to_string()) else { continue };
+        let game = div.value().attr("data-game-id").unwrap_or("").to_string();
+        out.push(RaiseGroup { node, game, title: text_of(a) });
+    }
+    out
+}
+
+static S_PROMO_GAME: Lazy<Selector> = Lazy::new(|| sel(".promo-game-item"));
+static S_GAME_TITLE: Lazy<Selector> = Lazy::new(|| sel(".game-title"));
+static S_GAME_LINKS: Lazy<Selector> = Lazy::new(|| sel("ul.list-inline li a"));
+
+/// Главная страница: раздел → игра.
+pub fn parse_node_games(html: &str) -> std::collections::HashMap<String, String> {
+    let doc = Html::parse_document(html);
+    let mut map = std::collections::HashMap::new();
+    for item in doc.select(&S_PROMO_GAME) {
+        let Some(game) = item.select(&S_GAME_TITLE).next().and_then(|t| t.value().attr("data-id")).map(String::from) else { continue };
+        for a in item.select(&S_GAME_LINKS) {
+            let href = a.value().attr("href").unwrap_or("");
+            if href.contains("/lots/") || href.contains("/chips/") {
+                if let Some(id) = href.split('/').filter(|x| !x.is_empty()).last() {
+                    if id.chars().all(|c| c.is_ascii_digit()) {
+                        map.insert(id.to_string(), game.clone());
+                    }
+                }
+            }
+        }
+    }
+    map
+}
+
+/// Окно "Информация об операции": строки таблицы и ссылка на внешнюю транзакцию.
+pub fn parse_transaction_info(html: &str) -> (String, Vec<(String, String)>, String) {
+    let doc = Html::parse_fragment(html);
+    let tr = sel("tr");
+    let th = sel("th");
+    let td = sel("td");
+    let a = sel("a[href]");
+    let mut rows = Vec::new();
+    let mut link = String::new();
+    let mut title = String::new();
+    for r in doc.select(&tr) {
+        let (Some(h), Some(d)) = (r.select(&th).next(), r.select(&td).next()) else { continue };
+        let k = text_of(h);
+        let v = d.text().collect::<Vec<_>>().join(" ").split_whitespace().collect::<Vec<_>>().join(" ");
+        if let Some(href) = d.select(&a).next().and_then(|x| x.value().attr("href")) {
+            if href.starts_with("http") && link.is_empty() {
+                link = href.to_string();
+            }
+        }
+        if k == "Описание" || k == "Description" {
+            title = v.clone();
+        }
+        if !k.is_empty() {
+            rows.push((k, v));
+        }
+    }
+    (title, rows, link)
+}
+
+#[cfg(test)]
+mod txn_info_tests {
+    #[test]
+    fn modal() {
+        let html = r#"<table class="values"><tbody><tr><th>Дата операции</th><td>9 октября, 0:17:40 <span class="text-muted">(3 недели назад)</span></td></tr>
+<tr><th>Описание</th><td>Вывод денег #29197273</td></tr><tr><th>Сумма</th><td>− 38 000 ₽</td></tr>
+<tr><th>Внешняя транзакция</th><td>104148b2e2 <a href="https://tronscan.org/#/transaction/104148b2e2" target="_blank"><i></i></a></td></tr></tbody></table>"#;
+        let (t, rows, link) = super::parse_transaction_info(html);
+        assert_eq!(t, "Вывод денег #29197273");
+        assert_eq!(rows[0].1, "9 октября, 0:17:40 (3 недели назад)");
+        assert_eq!(rows[3].1, "104148b2e2");
+        assert_eq!(link, "https://tronscan.org/#/transaction/104148b2e2");
+    }
+}

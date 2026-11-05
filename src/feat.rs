@@ -593,6 +593,12 @@ impl Ui {
         if fresh.is_empty() {
             return;
         }
+        // не беспокоить: без окон и звука, только автоответ
+        if self.dnd_active() {
+            let list: Vec<(String, String)> = fresh.iter().map(|c| (c.id.clone(), c.name.clone())).collect();
+            self.dnd_autoreply(&list);
+            return;
+        }
         let open = self.cur.as_ref().map(|c| c.id.clone());
         let show = enabled && (!self.focused || pop.in_focus);
         if show {
@@ -658,6 +664,10 @@ impl Ui {
                 "name" => p.show_name = v != 0,
                 "text" => p.show_text = v != 0,
                 "focus" => p.in_focus = v != 0,
+                "volume" => {
+                    p.volume = v.clamp(0, 100);
+                    crate::sys::set_volume(p.volume);
+                }
                 _ => {}
             }
             c.save();
@@ -675,7 +685,9 @@ impl Ui {
             s.set_pop_name(p.show_name);
             s.set_pop_text(p.show_text);
             s.set_pop_focus(p.in_focus);
+            s.set_pop_volume(p.volume as f32);
         });
+        crate::sys::set_volume(p.volume);
     }
 
     pub fn pop_test(&mut self) {
@@ -684,6 +696,10 @@ impl Ui {
         let avatar = self.chats.first().map(|c| c.avatar.clone()).unwrap_or_default();
         let chat = self.chats.first().map(|c| c.id.clone()).unwrap_or_default();
         self.show_note(&chat, &name, "Здравствуйте! Так выглядит уведомление о новом сообщении.", &avatar, &pop);
+        // в примере сразу слышно звук, если он включён
+        if self.cfg.lock().unwrap().sound {
+            crate::sys::play_sound();
+        }
     }
 
     // ------------------------------------------------------------ кэш чатов

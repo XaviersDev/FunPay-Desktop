@@ -110,12 +110,35 @@ pub struct Ui {
 /// Состояние новых экранов: сделки, описания, мини-браузер.
 #[derive(Default)]
 pub struct Ext {
+    /// предпросмотр пака шаблонов
+    pub pack_parts: Vec<crate::feat6::PackPart>,
+    pub pack_idx: i32,
+    /// отложенные, которые сейчас отправляются
+    pub sched_busy: Vec<String>,
+    /// чаты, которым уже ответили в режиме "Не беспокоить"
+    pub dnd_replied: Vec<String>,
+    pub stats_gen: u64,
+    pub txn_gen: u64,
+    /// продаж за сегодня (для статуса в Discord)
+    pub sales_today: Option<usize>,
+    /// когда начался статус в Discord, секунды
+    pub rpc_start: i64,
     /// листы кадров анимированных картинок по ключу кэша
     pub anims: HashMap<String, (Image, crate::anim::Info)>,
     /// вход через браузер: ключи, которые уже проверили на этой странице, и идёт ли проверка
     pub login_tried: Vec<String>,
     pub login_checking: bool,
     pub wall_gen: u64,
+    /// интерфейс плагинов: id → (дерево интерфейса, значения полей)
+    pub plugin_slots: HashMap<String, (serde_json::Value, serde_json::Value)>,
+    pub plugin_open: String,
+    pub plugins_started: bool,
+    pub plugin_ask_tx: Option<std::sync::mpsc::Sender<u8>>,
+    pub plugin_img_keys: Vec<String>,
+    pub cat_plugins: Vec<crate::feat4::CatEntry>,
+    pub cat_packs: Vec<crate::feat4::PackEntry>,
+    /// номер плагина в каталоге, который сейчас ставится, плюс один (0 нет)
+    pub cat_busy: i32,
     pub deals_gen: u64,
     pub deals_tab: i32,
     pub deals_state: String,
@@ -335,6 +358,12 @@ impl Ui {
     pub fn logged_in(&mut self, me: Me) {
         if !self.me.id.is_empty() && self.me.id != me.id {
             self.reset_account_view();
+            crate::plugins::reset_session();
+        }
+        // плагины запускаем после первого входа
+        if !self.ext.plugins_started && !self.demo {
+            self.ext.plugins_started = true;
+            self.start_plugins();
         }
         self.me = me;
         self.ext.adding = false;
@@ -354,6 +383,8 @@ impl Ui {
         self.update_me();
         self.rebuild_chats();
         self.tour_event("logged-in");
+        self.stats_tick();
+        self.discord_refresh();
     }
 
     pub fn update_me(&mut self) {
@@ -674,6 +705,7 @@ impl Ui {
         let folders = self.folder_rows(&c);
         let total: i32 = folders.first().map(|f| f.unread).unwrap_or(0);
         self.st(|s| s.set_folders(model(folders)));
+        self.widgets_unread(total);
         if let Some(app) = self.app() {
             app.set_win_title(if total > 0 { format!("FunPay Tools ({total})") } else { "FunPay Tools".into() }.into());
         }
@@ -841,6 +873,7 @@ impl Ui {
             c.save();
         }
         self.cur = Some(Cur { id: id.clone(), kind, gen, title: title.clone(), peer_id: String::new(), peer_avatar: avatar, msgs: vec![] });
+        self.rebuild_sched();
         self.reply = None;
         self.msgs_model.set_vec(vec![]);
         self.panes.clear();
@@ -1554,6 +1587,7 @@ impl Ui {
         if !self.ext.catalog.is_empty() {
             self.theme_preview_ready(&key);
         }
+        self.plugin_image_ready(&key);
         for i in 0..self.chats_model.row_count() {
             if let Some(mut r) = self.chats_model.row_data(i) {
                 if r.avatar_key == key.as_str() {
@@ -2845,9 +2879,13 @@ impl Ui {
             return;
         }
         let cookies = if c.cookies_for == c.golden_key || c.cookies_for.is_empty() { c.cookies.clone() } else { Default::default() };
-        let acc = crate::config::SavedAccount { id: me.id.clone(), name: me.name.clone(), avatar: me.avatar.clone(), golden_key: c.golden_key.clone(), cookies };
+        let mut acc = crate::config::SavedAccount { id: me.id.clone(), name: me.name.clone(), avatar: me.avatar.clone(), golden_key: c.golden_key.clone(), cookies, ..Default::default() };
         match c.accounts.iter_mut().find(|a| a.id == me.id) {
-            Some(a) => *a = acc,
+            Some(a) => {
+                acc.proxy = std::mem::take(&mut a.proxy);
+                acc.proxy_strict = a.proxy_strict;
+                *a = acc
+            }
             None => c.accounts.push(acc),
         }
         c.save();
@@ -2868,6 +2906,7 @@ impl Ui {
                 has_avatar: av.is_some(),
                 avatar: av.unwrap_or_default(),
                 active: a.id == my,
+                proxy: !a.proxy.is_empty(),
             });
         }
         self.st(|s| s.set_accounts(model(rows)));

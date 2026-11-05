@@ -1,10 +1,10 @@
-import { ScrollView } from "std-widgets.slint";
+import { ScrollView, Slider } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { St, Api } from "globals.slint";
 import { IconButton, Toggle, PrimaryButton, Dim } from "widgets.slint";
 import { EpicNick } from "epic.slint";
 
-component Card inherits Rectangle {
+export component Card inherits Rectangle {
     in property <length> w: 420px;
     callback close();
     property <bool> shown;
@@ -35,7 +35,7 @@ component Card inherits Rectangle {
     }
 }
 
-component Row inherits Rectangle {
+export component Row inherits Rectangle {
     in property <string> title;
     in property <string> hint;
     in-out property <bool> checked;
@@ -230,6 +230,23 @@ export component NotesDialog inherits Card {
                 hint: "Кроме чата, который сейчас открыт";
                 checked: St.pop-focus;
                 toggled(v) => { St.pop-focus = v; Api.pop-set("focus", v ? 1 : 0); }
+            }
+            // громкость звука уведомлений
+            VerticalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 6px;
+                spacing: 2px;
+                HorizontalLayout {
+                    Text { text: "Громкость звука"; color: Theme.ink; font-size: 14px; font-weight: 550; horizontal-stretch: 1; }
+                    Text { text: round(vs.value) == 0 ? "без звука" : round(vs.value) + "%"; color: Theme.muted; font-size: 13px; }
+                }
+                vs := Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value: St.pop-volume;
+                    released(v) => { St.pop-volume = v; Api.pop-set("volume", round(v)); Api.pop-sound(); }
+                }
             }
             HorizontalLayout {
                 padding-left: 20px;

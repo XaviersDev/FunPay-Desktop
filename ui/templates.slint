@@ -11,10 +11,11 @@ export component Field inherits Rectangle {
     in property <string> placeholder;
     in property <bool> multi;
     in property <length> font-size: 14px;
+    in property <color> bg: Theme.field;
     callback edited();
     height: multi ? 110px : 38px;
     border-radius: 9px;
-    background: Theme.field;
+    background: root.bg;
     border-width: ti.has-focus ? 1.5px : 0px;
     border-color: Theme.accent;
     public function focus-it() { ti.focus(); }
@@ -236,7 +237,7 @@ export component TplMenuList inherits Rectangle {
 
 // ============================================================ окно настроек шаблонов
 
-component Seg inherits Rectangle {
+export component Seg inherits Rectangle {
     in property <[string]> items;
     in property <int> value;
     callback picked(int);
@@ -266,7 +267,7 @@ component Seg inherits Rectangle {
     }
 }
 
-component OptRow inherits Rectangle {
+export component OptRow inherits Rectangle {
     in property <string> title;
     in property <string> hint;
     in-out property <bool> checked;
@@ -289,13 +290,13 @@ component OptRow inherits Rectangle {
     }
 }
 
-component Label inherits Text {
+export component Label inherits Text {
     color: Theme.muted;
     font-size: 12px;
     font-weight: 600;
 }
 
-component SmallBtn inherits Rectangle {
+export component SmallBtn inherits Rectangle {
     in property <string> text;
     in property <image> icon;
     in property <bool> has-icon;
@@ -463,6 +464,7 @@ export component TemplatesDialog inherits Rectangle {
                     }
                     HorizontalLayout {
                         alignment: start;
+                        spacing: 8px;
                         SmallBtn {
                             text: "Новый шаблон";
                             has-icon: true;
@@ -470,6 +472,12 @@ export component TemplatesDialog inherits Rectangle {
                             primary: true;
                             clicked => { Api.tpl-new(); }
                             TourMark { tid: "tpl-new"; }
+                        }
+                        SmallBtn {
+                            text: "Каталог шаблонов";
+                            has-icon: true;
+                            icon: @image-url("icons/extension.svg");
+                            clicked => { Api.open-catalog(1); }
                         }
                     }
                     OptRow {

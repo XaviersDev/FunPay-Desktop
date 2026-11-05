@@ -1,0 +1,159 @@
+// Виджет на рабочем столе. Карточка рисуется отдельно, чтобы показать её и в настройках.
+
+export component WidgetCard inherits Rectangle {
+    in property <string> label;
+    in property <string> big;
+    in property <string> unit;
+    in property <string> sub;
+    in property <bool> dark;
+    in property <color> accent: #3A7FD5;
+    // 0 компактный, 1 обычный, 2 крупный
+    in property <int> size: 1;
+    // непрозрачность фона 0..1
+    in property <float> alpha: 0.92;
+    // можно ли нажимать и закрывать (на самом рабочем столе нельзя: он часть обоев)
+    in property <bool> interactive: true;
+    callback closed();
+    callback clicked();
+    callback drag();
+
+    property <float> k: size == 2 ? 1.22 : 1;
+    property <bool> compact: size == 0;
+    property <bool> hover: root.interactive && (ta.has-hover || xa.has-hover);
+    property <color> ink: dark ? #F2F4F7 : #0E1116;
+    property <color> muted: dark ? #A3ADBA : #5E6878;
+    width: compact ? 200px : 216px * k;
+    height: compact ? 40px : 112px * k;
+    border-radius: compact ? 12px : 16px * k;
+    background: (dark ? #1B2027 : #FFFFFF).with-alpha(root.alpha);
+    border-width: 1px;
+    border-color: (dark ? #FFFFFF : #0E1116).with-alpha(0.08 * root.alpha);
+
+    ta := TouchArea {
+        enabled: root.interactive;
+        mouse-cursor: pointer;
+        moved => {
+            if (self.pressed && (abs(self.mouse-x - self.pressed-x) > 4px || abs(self.mouse-y - self.pressed-y) > 4px)) {
+                root.drag();
+            }
+        }
+        clicked => { root.clicked(); }
+    }
+
+    // компактный: одна тонкая строка, только главное
+    if root.compact: HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 7px;
+        VerticalLayout {
+            alignment: center;
+            Image { source: @image-url("icons/funpay_arrows.svg"); width: 13px; height: 13px; colorize: root.accent; }
+        }
+        Text { text: root.label; color: root.muted; font-size: 12px; font-weight: 500; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+        Text { text: root.big; color: root.ink; font-size: 16px; font-weight: 700; vertical-alignment: center; }
+        if root.unit != "": Text { text: root.unit; color: root.muted; font-size: 12.5px; font-weight: 600; vertical-alignment: center; }
+    }
+
+    if !root.compact: VerticalLayout {
+        padding-left: 16px * k;
+        padding-right: 10px * k;
+        padding-top: 12px * k;
+        padding-bottom: 12px * k;
+        spacing: 2px * k;
+        HorizontalLayout {
+            spacing: 7px * k;
+            height: 20px * k;
+            VerticalLayout {
+                alignment: center;
+                Image { source: @image-url("icons/funpay_arrows.svg"); width: 15px * k; height: 15px * k; colorize: root.accent; }
+            }
+            Text { text: root.label; color: root.muted; font-size: 12px * k; font-weight: 500; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+            Rectangle { width: 20px * k; }
+        }
+        HorizontalLayout {
+            spacing: 5px * k;
+            alignment: start;
+            Text { text: root.big; color: root.ink; font-size: 30px * k; font-weight: 700; vertical-alignment: bottom; }
+            if root.unit != "": Text { text: root.unit; color: root.muted; font-size: 15px * k; font-weight: 600; vertical-alignment: bottom; y: -4px * k; }
+        }
+        Text { text: root.sub; color: root.muted; font-size: 12px * k; overflow: elide; }
+    }
+
+    // крестик
+    Rectangle {
+        visible: root.interactive;
+        x: parent.width - self.width - (root.compact ? 8px : 10px * k);
+        y: root.compact ? (parent.height - self.height) / 2 : 12px * k;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: xa.has-hover ? (root.dark ? #FFFFFF18 : #0000000F) : (root.compact ? (root.dark ? #1B2027 : #FFFFFF) : transparent);
+        opacity: root.hover ? 1 : 0;
+        animate opacity { duration: 120ms; }
+        Image { source: @image-url("icons/close.svg"); width: 13px; colorize: root.muted; }
+        xa := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.closed(); }
+        }
+    }
+}
+
+export component WidgetWindow inherits Window {
+    in property <int> kind;
+    in property <string> label;
+    in property <string> big;
+    in property <string> unit;
+    in property <string> sub;
+    in property <bool> dark;
+    in property <color> accent: #3A7FD5;
+    in property <int> size: 1;
+    in property <float> alpha: 0.92;
+    // кусок обоев под виджетом: на рабочем столе окно непрозрачное и рисует обои само
+    in property <image> wall;
+    in property <bool> has-wall;
+    // режим перестановки: виджет можно таскать, он подсвечен рамкой
+    in property <bool> editing;
+    in property <bool> interactive: true;
+    // окно сначала уходит на место, а уже потом показывает карточку
+    in property <bool> shown;
+    callback clicked();
+    callback drag();
+    callback closed();
+
+    property <float> k: size == 2 ? 1.22 : 1;
+    title: "FunPay Tools";
+    no-frame: true;
+    width: size == 0 ? 200px : 216px * k;
+    height: size == 0 ? 40px : 112px * k;
+    background: transparent;
+    default-font-family: "Onest";
+
+    if root.has-wall: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.wall;
+        image-fit: fill;
+    }
+    WidgetCard {
+        x: 0;
+        y: 0;
+        opacity: root.shown ? 1 : 0;
+        label: root.label;
+        big: root.big;
+        unit: root.unit;
+        sub: root.sub;
+        dark: root.dark;
+        accent: root.accent;
+        size: root.size;
+        alpha: root.alpha;
+        interactive: root.interactive || root.editing;
+        closed => { root.closed(); }
+        clicked => { root.clicked(); }
+        drag => { root.drag(); }
+    }
+    if root.editing: Rectangle {
+        border-width: 2px;
+        border-color: root.accent;
+        border-radius: root.size == 0 ? 12px : 16px * root.k;
+    }
+}
