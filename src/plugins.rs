@@ -172,6 +172,90 @@ pub fn install(code: &str, hint: &str) -> Result<String, String> {
     Ok(format!("user.{base}"))
 }
 
+/// Версия как список чисел: "1.0.6-android" → [1, 0, 6].
+fn ver_nums(v: &str) -> Vec<u64> {
+    v.split(|c: char| !c.is_ascii_digit()).filter(|p| !p.is_empty()).filter_map(|p| p.parse().ok()).collect()
+}
+
+pub fn ver_newer(new: &str, old: &str) -> bool {
+    let (a, b) = (ver_nums(new), ver_nums(old));
+    !a.is_empty() && a > b
+}
+
+/// Обновить установленный плагин кодом из каталога, если там версия выше. Имя сверяется по @name.
+/// Возвращает (id, название, новая версия). Настройки и данные плагина остаются: id не меняется.
+pub fn update_from(code: &str) -> Option<(String, String, String)> {
+    let fresh = parse_meta(code);
+    if fresh.name.is_empty() || fresh.version.is_empty() {
+        return None;
+    }
+    let cur = list().into_iter().find(|m| !m.builtin && m.name.to_lowercase() == fresh.name.to_lowercase())?;
+    if !ver_newer(&fresh.version, &cur.version) {
+        return None;
+    }
+    std::fs::write(&cur.file, code).ok()?;
+    Some((cur.id, fresh.name, fresh.version))
+}
+
+/// Проверить каталог и обновить установленные из него плагины. Работает в фоновом потоке.
+pub fn check_updates() -> Vec<(String, String, String)> {
+    let mut done = Vec::new();
+    if !list().iter().any(|m| !m.builtin) {
+        return done;
+    }
+    let c = crate::fp::http_client_follow(30);
+    let Some(cat) = c
+        .get(CATALOG_URL)
+        .send()
+        .ok()
+        .filter(|r| r.status().is_success())
+        .and_then(|r| r.text().ok())
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+    else {
+        return done;
+    };
+    for e in cat.as_array().cloned().unwrap_or_default() {
+        let url = e.get("pluginUrl").and_then(|v| v.as_str()).unwrap_or("");
+        if !url.starts_with("https://") {
+            continue;
+        }
+        let Some(code) = c.get(url).send().ok().filter(|r| r.status().is_success()).and_then(|r| r.text().ok()) else { continue };
+        if let Some((id, name, ver)) = update_from(&code) {
+            log(&id, &format!("Плагин обновлён из каталога до версии {ver}"));
+            if is_running(&id) {
+                restart(&id);
+            } else if is_loaded(&id) {
+                stop(&id);
+            }
+            done.push((id, name, ver));
+        }
+    }
+    done
+}
+
+static UPDATER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Раз в три часа сверяем установленные плагины с каталогом. Запускается один раз.
+pub fn start_updater() {
+    if UPDATER.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let _ = std::thread::Builder::new().name("plugin updates".into()).spawn(|| {
+        std::thread::sleep(Duration::from_secs(20));
+        loop {
+            let done = check_updates();
+            if !done.is_empty() {
+                crate::ui::post(move |u| {
+                    u.rebuild_plugins();
+                    let names: Vec<String> = done.iter().map(|(_, n, v)| format!("{n} {v}")).collect();
+                    u.toast(&format!("Плагины обновлены: {}", names.join(", ")));
+                });
+            }
+            std::thread::sleep(Duration::from_secs(3 * 3600));
+        }
+    });
+}
+
 fn translit(c: char) -> char {
     const RU: &str = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
     const EN: &str = "abvgdeejziiklmnoprstufhccss_y_eua";
@@ -1195,6 +1279,8 @@ mod tests {
 
     #[test]
     fn meta_and_events() {
+        assert!(ver_newer("1.1.0", "1.0.6") && ver_newer("1.0.6-android", "1.0.5") && ver_newer("1.1", "1.0.9") && ver_newer("1.0.1", "1.0"));
+        assert!(!ver_newer("1.0.0", "1.0.0") && !ver_newer("1.0", "1.0.1") && !ver_newer("", "1.0") && !ver_newer("2.2.2", "2.2.2"));
         let m = parse_meta("// @name Тест\n// @author Я\n// @version 1.2\n// @description Делает дело\nfpt.app.log('x');\n// @name потом");
         assert_eq!((m.name.as_str(), m.author.as_str(), m.version.as_str()), ("Тест", "Я", "1.2"));
         let (e, o, b) = system_event("Покупатель darkness21 оплатил заказ #F88412AB. Steam-ключ").unwrap();

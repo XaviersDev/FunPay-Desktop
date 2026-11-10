@@ -10,6 +10,10 @@ export component EpicNick inherits Rectangle {
     in property <int> font-weight: 600;
     in property <color> plain: Theme.ink;
     in property <TextHorizontalAlignment> halign: left;
+    // пометка у ника создателя программы
+    in property <bool> tag: true;
+    property <bool> creator: root.tag && root.text == "sDimosX" && root.halign == TextHorizontalAlignment.left;
+    property <length> tag-w: creator ? ct.preferred-width + 6px : 0px;
     property <bool> live: nick.on && St.epic-anim && (nick.wave || nick.pulse || nick.glitch || nick.ov != 0);
     property <float> ms: live ? animation-tick() / 1ms : 0;
     property <float> period: max(400, nick.spd * 1000);
@@ -21,7 +25,7 @@ export component EpicNick inherits Rectangle {
     property <length> jitter: nick.glitch && live ? (mod(ms, 200) < 100 ? 1 : -1) * (mod(ms, 1700) < 260 ? 2px : 0.6px) : 0px;
     property <float> pt: mod(ms, 1800) / 1800;
 
-    preferred-width: tx.preferred-width;
+    preferred-width: tx.preferred-width + root.tag-w;
     min-width: 0;
     preferred-height: tx.preferred-height;
     height: tx.preferred-height;
@@ -39,9 +43,19 @@ export component EpicNick inherits Rectangle {
         drop-shadow-blur: 10px;
         drop-shadow-color: nick.c1.with-alpha(0.55 * root.alpha);
     }
+    ct := Text {
+        visible: root.creator;
+        x: min(tx.preferred-width, max(0px, root.width - root.tag-w)) + 6px;
+        height: tx.preferred-height;
+        vertical-alignment: center;
+        text: "• создатель";
+        color: #E5484D.with-alpha(0.6);
+        font-size: root.font-size - 2.5px;
+        font-weight: 500;
+    }
     tx := Text {
         x: root.jitter;
-        width: root.width;
+        width: max(0px, root.width - root.tag-w);
         text: root.text;
         font-size: root.font-size;
         font-weight: nick.on ? 800 : root.font-weight;

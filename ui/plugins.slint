@@ -511,19 +511,24 @@ component Tab inherits Rectangle {
 
 component PluginCard inherits Rectangle {
     in property <CatPlugin> p;
-    height: 104px;
+    // высота по описанию: текст виден целиком
+    height: max(104px, 20px + 24px + pdesc.preferred-height + 6px);
     border-radius: 12px;
     background: Theme.field;
     clip: true;
     HorizontalLayout {
         padding: 10px;
         spacing: 12px;
-        Rectangle {
-            width: 150px;
-            border-radius: 8px;
-            clip: true;
-            background: Theme.accent.with-alpha(0.12);
-            if p.has-banner: Image { width: parent.width; height: parent.height; source: p.banner; image-fit: cover; }
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 150px;
+                height: 84px;
+                border-radius: 8px;
+                clip: true;
+                background: Theme.accent.with-alpha(0.12);
+                if p.has-banner: Image { width: parent.width; height: parent.height; source: p.banner; image-fit: cover; }
+            }
         }
         VerticalLayout {
             horizontal-stretch: 1;
@@ -532,7 +537,7 @@ component PluginCard inherits Rectangle {
             Rectangle {
                 vertical-stretch: 1;
                 clip: true;
-                Text { y: 0; width: parent.width; height: self.preferred-height; text: p.description; color: Theme.muted; font-size: 12.5px; wrap: word-wrap; vertical-alignment: top; }
+                pdesc := Text { y: 0; width: parent.width; height: self.preferred-height; text: p.description; color: Theme.muted; font-size: 12.5px; wrap: word-wrap; vertical-alignment: top; }
             }
         }
         VerticalLayout {

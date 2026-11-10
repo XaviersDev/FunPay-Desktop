@@ -88,6 +88,7 @@ impl Ui {
                 }
             }
         }
+        plugins::start_updater();
     }
 
     pub fn plugin_toggle(&mut self, id: String, on: bool) {
