@@ -1510,7 +1510,79 @@ impl Ui {
             }
             None => s.set_pin_key("".into()),
         });
+        // выделение сообщений держится за ключи: подгрузка истории сверху сдвигает индексы
+        let sel = self.st(|s| (s.get_msel_a(), s.get_msel_b())).unwrap_or((-1, -1));
+        let key_at = |i: i32| if i >= 0 { self.msgs_model.row_data(i as usize).map(|r| r.key.to_string()) } else { None };
+        let (ka, kb) = (key_at(sel.0), key_at(sel.1));
         sync_model(&self.msgs_model, rows, |a, b| a.key == b.key);
+        if sel.0 >= 0 {
+            let find = |k: &Option<String>| -> i32 {
+                k.as_ref()
+                    .and_then(|k| (0..self.msgs_model.row_count()).find(|&i| self.msgs_model.row_data(i).map(|r| r.key.as_str() == k).unwrap_or(false)))
+                    .map(|i| i as i32)
+                    .unwrap_or(-1)
+            };
+            let (na, nb) = (find(&ka), find(&kb));
+            self.st(|s| {
+                if na < 0 || nb < 0 {
+                    s.set_msel_on(false);
+                    s.set_msel_a(-1);
+                    s.set_msel_b(-1);
+                } else {
+                    s.set_msel_a(na);
+                    s.set_msel_b(nb);
+                }
+            });
+        }
+    }
+
+    fn sel_range(&self, a: i32, b: i32) -> std::ops::Range<usize> {
+        let n = self.msgs_model.row_count();
+        if a < 0 || b < 0 || n == 0 {
+            return 0..0;
+        }
+        let (lo, hi) = (a.min(b) as usize, a.max(b) as usize);
+        lo.min(n)..(hi + 1).min(n)
+    }
+
+    pub fn selected_msgs_count(&self, a: i32, b: i32) -> i32 {
+        self.sel_range(a, b).filter_map(|i| self.msgs_model.row_data(i)).filter(|r| r.kind == 0).count() as i32
+    }
+
+    /// Текст выделенных сообщений: перед каждым автор и время, дата берётся из ближайшей плашки с датой выше.
+    pub fn selected_msgs_text(&self, a: i32, b: i32) -> String {
+        let range = self.sel_range(a, b);
+        if range.is_empty() {
+            return String::new();
+        }
+        let mut date = String::new();
+        for i in (0..range.start).rev() {
+            if let Some(r) = self.msgs_model.row_data(i) {
+                if r.kind == 1 {
+                    date = r.text.to_string();
+                    break;
+                }
+            }
+        }
+        let mut out: Vec<String> = Vec::new();
+        for i in range {
+            let Some(r) = self.msgs_model.row_data(i) else { continue };
+            if r.kind == 1 {
+                date = r.text.to_string();
+                continue;
+            }
+            let who = if !r.author.is_empty() { r.author.to_string() } else if r.out { "Вы".to_string() } else { "Собеседник".to_string() };
+            let time = if !r.time_full.is_empty() { r.time_full.to_string() } else { r.time.to_string() };
+            let when = [date.as_str(), time.as_str()].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" ");
+            let mut body = r.text.to_string();
+            if r.album && r.tiles.row_count() > 0 {
+                let pics: Vec<String> = (0..r.tiles.row_count()).filter_map(|j| r.tiles.row_data(j)).map(|t| t.url.to_string()).collect();
+                let pics = pics.join("\n");
+                body = if body.is_empty() { pics } else { format!("{pics}\n{body}") };
+            }
+            out.push(if when.is_empty() { format!("{who}:\n{body}") } else { format!("{who}, [{when}]\n{body}") });
+        }
+        out.join("\n\n")
     }
 
     fn row_by_key(&self, key: &str) -> Option<MsgRow> {

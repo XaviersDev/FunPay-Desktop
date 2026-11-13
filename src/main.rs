@@ -505,6 +505,13 @@ pub fn setup(app: &AppWindow, cfg: Arc<Mutex<config::Config>>, tx: std::sync::mp
         let ok = !part.is_empty() && set_clipboard_text(&part);
         with_ui(|u| u.toast(if ok { "Скопировано" } else { "Не получилось скопировать" }));
     });
+    // выделенные протяжкой сообщения: "Автор [дата время]" и текст, как при копировании в Telegram
+    api.on_copy_msgs(|a, b| {
+        let text = with_ui(|u| u.selected_msgs_text(a, b)).unwrap_or_default();
+        let ok = !text.is_empty() && set_clipboard_text(&text);
+        with_ui(|u| u.toast(if ok { "Сообщения скопированы" } else { "Не получилось скопировать" }));
+    });
+    api.on_msel_count(|a, b| with_ui(|u| u.selected_msgs_count(a, b)).unwrap_or(0));
     api.on_cut_range(|t, a, b| {
         let (lo, hi) = (a.min(b).max(0) as usize, a.max(b).max(0) as usize);
         if lo == hi || hi > t.len() || !t.is_char_boundary(lo) || !t.is_char_boundary(hi) {

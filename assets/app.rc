@@ -9,9 +9,9 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "XaviersDev"
       VALUE "FileDescription", "FunPay Tools"
-      VALUE "FileVersion", "4.5.2"
+      VALUE "FileVersion", "4.5.3"
       VALUE "ProductName", "FunPay Tools"
-      VALUE "ProductVersion", "4.5.2"
+      VALUE "ProductVersion", "4.5.3"
       VALUE "OriginalFilename", "FunPayTools.exe"
     END
   END

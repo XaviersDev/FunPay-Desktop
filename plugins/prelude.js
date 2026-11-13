@@ -131,6 +131,7 @@ window.window = globalThis;
     };
     fpt.orders = {
         getDetails: function (id) { return val("orders.getDetails", [String(id)], null); },
+        getSales: function (opts) { return val("orders.getSales", [opts || {}], []); },
         confirm: function (id) { return ok("orders.confirm", [String(id)]) === true; },
         refund: function (id) { return ok("orders.refund", [String(id)]) === true; },
         review: {
@@ -153,7 +154,7 @@ window.window = globalThis;
         getProfile: function () { return val("users.getProfile", [], null); },
         get: function (id) { return val("users.get", [String(id)], null); },
         getRmtHub: function () { return null; },
-        getSales: function () { return []; },
+        getSales: function (opts) { return val("orders.getSales", [opts || {}], []); },
         getOrdersWith: function () { return []; },
         setAvatar: function () { return false; },
     };
@@ -162,14 +163,14 @@ window.window = globalThis;
         getActive: function () { return val("accounts.getActive", [], null); },
         switch: function () { return false; },
     };
-    function req(method, url, body, headers) {
-        var r = call("network.request", [method, String(url), body === undefined ? null : body, headers === undefined ? null : headers]);
+    function req(method, url, body, headers, opts) {
+        var r = call("network.request", [method, String(url), body === undefined ? null : body, headers === undefined ? null : headers, opts || null]);
         return r === undefined ? { code: 0, body: "", error: lastError } : r;
     }
     fpt.network = {
-        get: function (url, headers) { return req("GET", url, null, headers); },
-        post: function (url, body, headers) { return req("POST", url, body, headers); },
-        request: function (method, url, body, headers) { return req(method, url, body, headers); },
+        get: function (url, headers, opts) { return req("GET", url, null, headers, opts); },
+        post: function (url, body, headers, opts) { return req("POST", url, body, headers, opts); },
+        request: function (method, url, body, headers, opts) { return req(method, url, body, headers, opts); },
         fetchImageBase64: function (url) { return val("network.fetchImageBase64", [String(url)], null); },
     };
     // запросы к FunPay с готовым csrf_token и заголовками сайта

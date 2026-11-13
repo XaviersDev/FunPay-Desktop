@@ -45,6 +45,8 @@ pub struct Meta {
     pub version: String,
     pub description: String,
     pub banner: String,
+    /// Откуда плагин сам обновляется (строка // @updateUrl), кроме каталога
+    pub update_url: String,
     pub builtin: bool,
     pub file: String,
 }
@@ -110,6 +112,7 @@ pub fn parse_meta(code: &str) -> Meta {
             "version" => m.version = v,
             "description" => m.description = v,
             "banner" => m.banner = v,
+            "updateUrl" | "updateurl" | "update" => m.update_url = v,
             _ => {}
         }
     }
@@ -204,22 +207,33 @@ pub fn check_updates() -> Vec<(String, String, String)> {
         return done;
     }
     let c = crate::fp::http_client_follow(30);
-    let Some(cat) = c
+    // каталог не открылся: всё равно проверяем ссылки из шапок плагинов
+    let cat = c
         .get(CATALOG_URL)
         .send()
         .ok()
         .filter(|r| r.status().is_success())
         .and_then(|r| r.text().ok())
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-    else {
-        return done;
-    };
-    for e in cat.as_array().cloned().unwrap_or_default() {
-        let url = e.get("pluginUrl").and_then(|v| v.as_str()).unwrap_or("");
+        .unwrap_or(Value::Null);
+    // ссылки каталога и ссылки из шапок самих плагинов (// @updateUrl), без повторов
+    let mut urls: Vec<String> = cat
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|e| e.get("pluginUrl").and_then(|v| v.as_str()).map(String::from))
+        .collect();
+    for m in list().into_iter().filter(|m| !m.builtin && m.update_url.starts_with("https://")) {
+        if !urls.contains(&m.update_url) {
+            urls.push(m.update_url);
+        }
+    }
+    for url in urls {
         if !url.starts_with("https://") {
             continue;
         }
-        let Some(code) = c.get(url).send().ok().filter(|r| r.status().is_success()).and_then(|r| r.text().ok()) else { continue };
+        let Some(code) = c.get(&url).send().ok().filter(|r| r.status().is_success()).and_then(|r| r.text().ok()) else { continue };
         if let Some((id, name, ver)) = update_from(&code) {
             log(&id, &format!("Плагин обновлён из каталога до версии {ver}"));
             if is_running(&id) {
@@ -816,6 +830,38 @@ fn call(id: &str, name: &str, a: &[Value]) -> Result<Value, String> {
                 }))
             })
         }
+        // последние продажи со страницы orders/trade: заказы, оплаченные, пока программа была закрыта
+        "orders.getSales" => {
+            let opts = a.first().cloned().unwrap_or(Value::Null);
+            let state = opts.get("state").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let pages = opts.get("pages").and_then(|v| v.as_u64()).unwrap_or(1).clamp(1, 5) as usize;
+            with_fp(|fp| {
+                let now = crate::fp::now_msk();
+                let mut out = Vec::new();
+                let mut cont = String::new();
+                for _ in 0..pages {
+                    let (items, next) = fp.trade_page(true, &state, &cont)?;
+                    for t in items {
+                        let age = crate::parse::parse_fp_date(&t.date, now).map(|d| (now - d).num_seconds());
+                        let status = match t.state {
+                            crate::money::TradeState::Paid => "paid",
+                            crate::money::TradeState::Refunded => "refunded",
+                            crate::money::TradeState::Closed => "closed",
+                        };
+                        out.push(json!({
+                            "orderId": t.id, "id": t.id, "status": status, "statusText": t.status_text, "lotName": t.desc,
+                            "game": t.game, "price": t.price, "buyerName": t.peer, "buyerId": t.peer_id, "date": t.date,
+                            "ageSec": age, "ts": age.map(|x| chrono::Utc::now().timestamp() - x)
+                        }));
+                    }
+                    if next.is_empty() {
+                        break;
+                    }
+                    cont = next;
+                }
+                Ok(Value::Array(out))
+            })
+        }
         "orders.refund" => {
             let oid = s(a, 0);
             ask_permission(id, &format!("вернуть деньги по заказу #{oid}"))?;
@@ -928,7 +974,7 @@ fn call(id: &str, name: &str, a: &[Value]) -> Result<Value, String> {
         "accounts.switch" => Err("Переключать аккаунт из плагина нельзя".into()),
 
         // --- сеть
-        "network.request" => network(id, &s(a, 0), &s(a, 1), a.get(2), a.get(3)),
+        "network.request" => network(id, &s(a, 0), &s(a, 1), a.get(2), a.get(3), a.get(4)),
         "network.fetchImageBase64" => {
             let url = s(a, 0);
             let bytes = fetch(&url)?;
@@ -1009,7 +1055,12 @@ fn ask_permission(id: &str, what: &str) -> Result<(), String> {
     }
 }
 
-fn network(id: &str, method: &str, url: &str, body: Option<&Value>, headers: Option<&Value>) -> Result<Value, String> {
+/// opts: { proxy: "ip:порт:логин:пароль" или "socks5://…", timeout: секунды }. К FunPay прокси не применяется:
+/// у FunPay свой прокси аккаунта из настроек программы.
+fn network(id: &str, method: &str, url: &str, body: Option<&Value>, headers: Option<&Value>, opts: Option<&Value>) -> Result<Value, String> {
+    let opts = opts.cloned().unwrap_or(Value::Null);
+    let proxy_raw = opts.get("proxy").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let timeout = opts.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30).clamp(3, 120);
     let method = if method.is_empty() { "GET".to_string() } else { method.to_uppercase() };
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("Нужен адрес, начинающийся с https://".into());
@@ -1060,7 +1111,12 @@ fn network(id: &str, method: &str, url: &str, body: Option<&Value>, headers: Opt
         return Ok(json!({ "code": code, "body": text, "url": final_url, "json": json_body }));
     }
     // чужие сайты: без кук FunPay
-    let client = crate::fp::http_client_follow(30);
+    let client = if proxy_raw.is_empty() {
+        crate::fp::client_with(timeout, true, None)?
+    } else {
+        let p = crate::proxy::normalize(crate::proxy::kind_of(&proxy_raw), &proxy_raw)?;
+        crate::fp::client_with(timeout, true, Some(&p))?
+    };
     let m = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| "Неизвестный метод запроса".to_string())?;
     let mut rb = client.request(m, url);
     for (k, v) in &hs {
@@ -1069,7 +1125,15 @@ fn network(id: &str, method: &str, url: &str, body: Option<&Value>, headers: Opt
     if let Some((ct, bytes)) = body {
         rb = rb.header("Content-Type", ct).body(bytes);
     }
-    let r = rb.send().map_err(|e| if e.is_timeout() { "Сайт не ответил вовремя".to_string() } else { format!("Нет связи: {e}") })?;
+    let r = rb.send().map_err(|e| {
+        if e.is_timeout() {
+            "Сайт не ответил вовремя".to_string()
+        } else if !proxy_raw.is_empty() && e.is_connect() {
+            format!("Прокси не отвечает: {e}")
+        } else {
+            format!("Нет связи: {e}")
+        }
+    })?;
     let code = r.status().as_u16();
     let mut headers = serde_json::Map::new();
     for (k, v) in r.headers() {

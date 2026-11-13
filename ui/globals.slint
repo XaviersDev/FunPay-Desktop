@@ -54,6 +54,13 @@ export global St {
     in-out property <bool> loading-older;
     in-out property <string> send-error;
     in-out property <string> jump-key;
+    // выделение нескольких сообщений протяжкой мышью, как в Telegram: индексы в messages
+    in-out property <int> msel-a: -1;
+    in-out property <int> msel-b: -1;
+    in-out property <bool> msel-on;      // выделение есть (мышь сдвинулась после нажатия)
+    in-out property <bool> msel-drag;    // кнопка мыши ещё зажата
+    in-out property <length> msel-py;    // где сейчас курсор по вертикали (в координатах окна)
+    in-out property <length> msel-y0;    // где нажали
     in-out property <int> jump-n;
     in-out property <length> jump-y;
     in-out property <int> jump-done;
@@ -444,6 +451,8 @@ export global Api {
     // Копирование и вырезание через своё обращение к буферу Windows (байтовые смещения выделения Slint).
     // Пустое выделение копирует весь текст.
     callback copy-range(string, int, int);
+    callback copy-msgs(int, int);
+    pure callback msel-count(int, int) -> int;
     callback cut-range(string, int, int) -> string;
     // вставка строки на место курсора или выделения: новый текст и новое место курсора
     callback insert-range(string, int, int, string) -> string;

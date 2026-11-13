@@ -68,6 +68,7 @@ export component Album inherits Rectangle {
 
 component MsgView inherits Rectangle {
     in property <MsgRow> item;
+    in property <int> index;
     in property <length> avail;
     in property <bool> group;
     // где лежит фон ленты (для матового стекла под пузырём)
@@ -106,8 +107,51 @@ component MsgView inherits Rectangle {
     }
     height: lay.preferred-height;
 
+    // выделение нескольких сообщений: зажали мышь на сообщении или рядом и тянут вверх или вниз
+    property <bool> msel: St.msel-on && item.kind == 0 && root.index >= min(St.msel-a, St.msel-b) && root.index <= max(St.msel-a, St.msel-b);
+    property <bool> under: St.msel-drag && St.msel-py >= root.absolute-position.y && St.msel-py < root.absolute-position.y + root.height;
+    changed under => {
+        if (self.under) {
+            St.msel-b = root.index;
+        }
+    }
+    function sel-down(py: length) {
+        St.msel-a = root.index;
+        St.msel-b = root.index;
+        St.msel-on = false;
+        St.msel-y0 = py;
+        St.msel-py = py;
+        St.msel-drag = true;
+    }
+    function sel-move(py: length) {
+        if (!St.msel-drag) {
+            return;
+        }
+        St.msel-py = py;
+        if (!St.msel-on && abs(py - St.msel-y0) > 6px) {
+            St.msel-on = true;
+        }
+    }
+    function sel-up() {
+        St.msel-drag = false;
+    }
+
     if lit: Rectangle {
         background: Theme.accent.with-alpha(0.14);
+    }
+    if msel: Rectangle {
+        background: Theme.accent.with-alpha(0.16);
+    }
+    // вся строка: пустое место рядом с пузырём тоже начинает выделение
+    TouchArea {
+        pointer-event(e) => {
+            if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                root.sel-down(self.absolute-position.y + self.mouse-y);
+            } else if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) {
+                root.sel-up();
+            }
+        }
+        moved => { root.sel-move(self.absolute-position.y + self.mouse-y); }
     }
 
     tm := Text {
@@ -234,8 +278,13 @@ component MsgView inherits Rectangle {
                             root.my = self.mouse-y;
                             root.menu-url = item.album && item.tiles.length > 0 ? item.tiles[0].url : "";
                             menu.show();
+                        } else if (e.button == PointerEventButton.left && e.kind == PointerEventKind.down) {
+                            root.sel-down(self.absolute-position.y + self.mouse-y);
+                        } else if (e.button == PointerEventButton.left && e.kind == PointerEventKind.up) {
+                            root.sel-up();
                         }
                     }
+                    moved => { root.sel-move(self.absolute-position.y + self.mouse-y); }
                 }
 
                 inner := VerticalLayout {
@@ -623,6 +672,12 @@ export component ChatPane inherits Rectangle {
     in property <bool> show-back;
     in property <bool> compact;
     property <bool> group: St.cur-kind != 0;
+    // другой чат: выделение сообщений снимаем
+    property <string> sel-chat: St.cur-id;
+    changed sel-chat => {
+        St.msel-on = false;
+        St.msel-drag = false;
+    }
     in-out property <bool> stick: true;
     property <length> anchor;
     property <bool> keep-anchor;
@@ -936,6 +991,15 @@ export component ChatPane inherits Rectangle {
             FocusScope {
                 // буквы, набранные при фокусе в ленте, уходят в поле ввода
                 key-pressed(e) => {
+                    if (St.msel-on && e.modifiers.control && (e.text == "c" || e.text == "C" || e.text == "с" || e.text == "С" || e.text == Key.Insert)) {
+                        Api.copy-msgs(St.msel-a, St.msel-b);
+                        St.msel-on = false;
+                        return accept;
+                    }
+                    if (St.msel-on && e.text == Key.Escape) {
+                        St.msel-on = false;
+                        return accept;
+                    }
                     if (e.text != "" && !e.modifiers.control && !e.modifiers.alt && e.text != Key.Escape && e.text != Key.Tab
                         && e.text != Key.UpArrow && e.text != Key.DownArrow && e.text != Key.LeftArrow && e.text != Key.RightArrow
                         && e.text != Key.Return && e.text != Key.Backspace && e.text != Key.Delete && e.text != Key.PageUp && e.text != Key.PageDown
@@ -985,14 +1049,68 @@ export component ChatPane inherits Rectangle {
                             padding: 6px;
                             Pill { text: "Загружаю историю…"; }
                         }
-                        for r in St.messages: MsgView {
+                        for r[i] in St.messages: MsgView {
                             item: r;
+                            index: i;
                             avail: sv.visible-width;
                             group: root.group;
                             wall-ax: feed.absolute-position.x;
                             wall-ay: feed.absolute-position.y;
                             wall-w: feed.width;
                             wall-h: feed.height;
+                        }
+                    }
+                }
+            }
+            // тянут выделение к краю ленты: прокручиваем
+            Timer {
+                interval: 16ms;
+                running: St.msel-drag && St.msel-on && (St.msel-py < feed.absolute-position.y + 36px || St.msel-py > feed.absolute-position.y + feed.height - 36px);
+                triggered => {
+                    if (St.msel-py < feed.absolute-position.y + 36px) {
+                        sv.content-y = min(0px, sv.content-y + 14px);
+                    } else {
+                        sv.content-y = max(min(0px, sv.visible-height - sv.content-height), sv.content-y - 14px);
+                    }
+                }
+            }
+            // выбранные сообщения: скопировать или снять выделение
+            if St.msel-on: Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: 10px;
+                width: sbar.preferred-width;
+                height: 40px;
+                border-radius: 20px;
+                background: Theme.panel;
+                drop-shadow-blur: 8px;
+                drop-shadow-color: Theme.shadow;
+                sbar := HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 6px;
+                    spacing: 6px;
+                    Text {
+                        text: "Выбрано: " + Api.msel-count(St.msel-a, St.msel-b);
+                        color: Theme.ink;
+                        font-size: 13.5px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        PrimaryButton {
+                            height: 30px;
+                            width: 118px;
+                            text: "Копировать";
+                            clicked => { Api.copy-msgs(St.msel-a, St.msel-b); St.msel-on = false; }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton {
+                            size: 30px;
+                            icon-size: 16px;
+                            icon: @image-url("icons/close.svg");
+                            clicked => { St.msel-on = false; }
                         }
                     }
                 }
@@ -1210,7 +1328,14 @@ export component ChatPane inherits Rectangle {
                             if (e.modifiers.control && (e.text == "c" || e.text == "C" || e.text == "с" || e.text == "С")) {
                                 if (input.anchor-position-byte-offset != input.cursor-position-byte-offset) {
                                     Api.copy-range(input.text, input.anchor-position-byte-offset, input.cursor-position-byte-offset);
+                                } else if (St.msel-on) {
+                                    Api.copy-msgs(St.msel-a, St.msel-b);
+                                    St.msel-on = false;
                                 }
+                                return accept;
+                            }
+                            if (e.text == Key.Escape && St.msel-on) {
+                                St.msel-on = false;
                                 return accept;
                             }
                             if (e.modifiers.control && (e.text == "x" || e.text == "X" || e.text == "ч" || e.text == "Ч")) {
