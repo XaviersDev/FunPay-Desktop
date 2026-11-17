@@ -1,5 +1,5 @@
 //! Цветные ники донатеров, как в мобильном приложении (EpicNicksManager).
-//! Список: funpay.tools/api/donaters/, запасной на GitHub. Ник → "FPT-STYLE-" + base64(JSON стиля).
+//! Список: donaters.json на GitHub (raw, запасной jsDelivr). Ник → "FPT-STYLE-" + base64(JSON стиля).
 
 use crate::NickStyle;
 use base64::Engine;
@@ -95,9 +95,10 @@ fn map() -> &'static Mutex<HashMap<String, Nick>> {
     M.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+// funpay.tools/api/donaters отвечает только на POST от бота, а каждый запрос туда тратит лимит Vercel
 const URLS: [&str; 2] = [
-    "https://funpay.tools/api/donaters/",
     "https://raw.githubusercontent.com/XaviersDev/FunPayTools-Site/main/donaters.json",
+    "https://cdn.jsdelivr.net/gh/XaviersDev/FunPayTools-Site@main/donaters.json",
 ];
 
 fn cache_path() -> std::path::PathBuf {

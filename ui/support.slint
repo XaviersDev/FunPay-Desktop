@@ -1,0 +1,570 @@
+import { ScrollView, ComboBox } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { St, Api } from "globals.slint";
+import { SupTicket, SupMsg, SupField, SupFile, KV } from "types.slint";
+import { IconButton, PrimaryButton, Pill, AnimImage, MenuCard, MenuItem } from "widgets.slint";
+import { Field } from "templates.slint";
+
+// Центр поддержки FunPay в стиле чатов: список заявок, переписка пузырями, новая заявка.
+
+component Wall inherits Rectangle {
+    background: Theme.wall;
+    clip: true;
+    if Theme.show-pattern: Image {
+        width: parent.width;
+        height: parent.height;
+        source: Theme.wall-pattern;
+        horizontal-tiling: repeat;
+        vertical-tiling: repeat;
+    }
+    if Theme.custom && Theme.c-has-wall-img: AnimImage {
+        width: parent.width;
+        height: parent.height;
+        source: Theme.c-wall-img;
+        anim: Theme.c-wall-anim;
+        image-fit: cover;
+    }
+    @children
+}
+
+global Tone {
+    public pure function c(t: int) -> color {
+        return t == 0 ? #E5484D : t == 1 ? #F0A020 : t == 2 ? #2FA66A : #8C96A3;
+    }
+}
+
+component StatusPill inherits Rectangle {
+    in property <string> text;
+    in property <int> tone;
+    height: 20px;
+    width: st.preferred-width + 14px;
+    border-radius: 10px;
+    background: Tone.c(tone).with-alpha(0.15);
+    st := Text { text: root.text; color: Tone.c(root.tone); font-size: 11px; font-weight: 700; }
+}
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <int> count;
+    in property <bool> on;
+    callback clicked();
+    height: 30px;
+    width: cl.preferred-width + 24px;
+    border-radius: 15px;
+    background: on ? Theme.accent : ta.has-hover ? Theme.hover : Theme.field;
+    cl := HorizontalLayout {
+        alignment: center;
+        spacing: 6px;
+        Text { text: root.text; color: root.on ? Theme.on-accent : Theme.ink; font-size: 13px; font-weight: 600; vertical-alignment: center; }
+        Text { text: root.count; color: root.on ? Theme.on-accent.with-alpha(0.75) : Theme.muted; font-size: 12.5px; font-weight: 700; vertical-alignment: center; }
+    }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+component Head inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    in property <bool> back: true;
+    height: 56px;
+    background: Theme.panel;
+    hl := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 8px;
+        spacing: 6px;
+        if root.back: VerticalLayout {
+            alignment: center;
+            IconButton { icon: @image-url("icons/arrow_back.svg"); clicked => { Api.sup-back(); } }
+        }
+        if !root.back: Rectangle { width: 8px; }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 1px;
+            Text { text: root.title; color: Theme.ink; font-size: 16px; font-weight: 700; overflow: elide; }
+            if root.sub != "": Text { text: root.sub; color: Theme.muted; font-size: 12.5px; overflow: elide; }
+        }
+        @children
+    }
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+}
+
+// строка заявки: как строка чата
+component TicketRow inherits Rectangle {
+    in property <SupTicket> t;
+    height: 68px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 46px;
+                height: 46px;
+                border-radius: 23px;
+                background: @linear-gradient(160deg, Tone.c(root.t.tone).mix(#ffffff, 0.75) 0%, Tone.c(root.t.tone) 100%);
+                Text { text: "#"; color: white; font-size: 20px; font-weight: 700; }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: root.t.title != "" ? root.t.title : "Заявка #" + root.t.id; color: Theme.ink; font-size: 14.5px; font-weight: 650; overflow: elide; horizontal-stretch: 1; }
+                Text { text: root.t.date; color: Theme.muted; font-size: 12px; }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Заявка #" + root.t.id; color: Theme.muted; font-size: 13px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+                StatusPill { text: root.t.status; tone: root.t.tone; }
+            }
+        }
+    }
+    Rectangle { x: 72px; y: parent.height - 1px; width: parent.width - 72px; height: 1px; background: Theme.line; }
+    ta := TouchArea { mouse-cursor: pointer; clicked => { Api.sup-ticket(root.t.id); } }
+}
+
+component FileChip inherits Rectangle {
+    in property <SupFile> f;
+    in property <bool> out;
+    height: 34px;
+    width: min(260px, fl.preferred-width + 20px);
+    border-radius: 9px;
+    background: out ? #ffffff26 : Theme.field;
+    fl := HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 10px;
+        spacing: 6px;
+        Image {
+            source: root.f.image ? @image-url("icons/image.svg") : @image-url("icons/attach_file.svg");
+            width: 18px;
+            colorize: Theme.accent;
+            y: (parent.height - self.height) / 2;
+        }
+        Text { text: root.f.name; color: Theme.accent; font-size: 12.5px; font-weight: 600; overflow: elide; vertical-alignment: center; }
+    }
+    TouchArea { mouse-cursor: pointer; clicked => { Api.sup-file-open(root.f.url); } }
+}
+
+component Bubble inherits Rectangle {
+    in property <SupMsg> m;
+    in property <length> avail;
+    property <length> side: m.mine ? 0px : 44px;
+    property <length> maxw: max(160px, min(avail - side - 70px, 520px));
+    property <length> inner: min(maxw - 24px, max(m.text != "" ? txm.preferred-width + 2px : 0px, max(m.first && !m.mine ? anm.preferred-width : 0px, max(tm.preferred-width + 8px, m.files.length > 0 ? 180px : 0px))));
+    property <length> bw: inner + 24px;
+    height: col.preferred-height + (m.first ? 10px : 4px);
+    // невидимые замеры ширины текста
+    anm := Text { visible: false; text: root.m.author; font-size: 13px; font-weight: 700; }
+    txm := Text { visible: false; text: root.m.text; font-size: 14px; }
+    // аватар у первого сообщения серии
+    if !root.m.mine && root.m.first: Rectangle {
+        x: 12px;
+        y: root.height - 36px;
+        width: 34px;
+        height: 34px;
+        border-radius: 17px;
+        clip: true;
+        background: @linear-gradient(160deg, #6FB2FF 0%, #2F6FD0 100%);
+        if !root.m.has-avatar: Text { text: root.m.letter; color: white; font-size: 14px; font-weight: 650; }
+        if root.m.has-avatar: Image { width: 34px; height: 34px; source: root.m.avatar; image-fit: cover; }
+    }
+    bub := Rectangle {
+        x: root.m.mine ? root.width - root.bw - 14px : 14px + root.side - 2px;
+        y: root.m.first ? 8px : 2px;
+        width: root.bw;
+        height: col.preferred-height;
+        border-radius: 15px;
+        background: root.m.mine ? Theme.bubble-out : Theme.bubble-in;
+        drop-shadow-blur: 2px;
+        drop-shadow-offset-y: 1px;
+        drop-shadow-color: Theme.shadow;
+        col := VerticalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-top: 7px;
+            padding-bottom: 6px;
+            spacing: 4px;
+            if root.m.first && !root.m.mine: Text { text: root.m.author; color: Theme.accent; font-size: 13px; font-weight: 700; }
+            if root.m.text != "": TextInput {
+                text: root.m.text;
+                read-only: true;
+                wrap: word-wrap;
+                width: root.inner;
+                color: root.m.mine ? Theme.text-out : Theme.text-in;
+                font-size: 14px;
+                selection-background-color: Theme.accent-soft;
+            }
+            for f in root.m.files: FileChip { f: f; out: root.m.mine; }
+            HorizontalLayout {
+                alignment: end;
+                tm := Text { text: root.m.time; color: root.m.mine ? Theme.meta-out : Theme.meta-in; font-size: 11px; }
+            }
+        }
+    }
+}
+
+component Composer inherits Rectangle {
+    in property <string> placeholder: "Написать в поддержку…";
+    callback send(string);
+    property <string> draft;
+    height: max(56px, min(180px, inp.preferred-height + 18px));
+    background: Theme.panel;
+    Rectangle { height: 1px; y: 0; background: Theme.line; }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 9px;
+        padding-bottom: 9px;
+        spacing: 6px;
+        VerticalLayout {
+            alignment: end;
+            Rectangle {
+                width: 38px;
+                height: 38px;
+                border-radius: 19px;
+                background: ata.has-hover ? Theme.hover : transparent;
+                Image { source: @image-url("icons/attach_file.svg"); width: 23px; colorize: St.sup-files != "" ? Theme.accent : Theme.muted; }
+                ata := TouchArea { mouse-cursor: pointer; clicked => { Api.sup-attach(); } }
+            }
+        }
+        inp := Field {
+            horizontal-stretch: 1;
+            multi: true;
+            height: max(38px, min(160px, self.preferred-height));
+            placeholder: root.placeholder;
+            text <=> root.draft;
+        }
+        VerticalLayout {
+            alignment: end;
+            Rectangle {
+                width: 38px;
+                height: 38px;
+                border-radius: 19px;
+                background: sta.has-hover ? Theme.hover : transparent;
+                Image { source: @image-url("icons/send-fill.svg"); width: 24px; colorize: root.draft != "" && !St.sup-busy ? Theme.accent : Theme.faint; }
+                sta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        if (root.draft != "" && !St.sup-busy) {
+                            root.send(root.draft);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    property <int> sent: St.sup-sent-n;
+    changed sent => { root.draft = ""; }
+}
+
+// поле формы новой заявки
+component FormField inherits Rectangle {
+    in property <SupField> f;
+    height: fl.preferred-height;
+    fl := VerticalLayout {
+        spacing: 6px;
+        padding-bottom: 12px;
+        if root.f.kind != "note": Text { text: root.f.label + (root.f.required ? " *" : ""); color: Theme.muted; font-size: 12px; font-weight: 650; wrap: word-wrap; }
+        if root.f.kind == "note": Rectangle {
+            height: nt.preferred-height + 20px;
+            border-radius: 10px;
+            background: #F0A020.with-alpha(0.14);
+            border-width: 1px;
+            border-color: #F0A020.with-alpha(0.35);
+            nt := Text {
+                x: 12px;
+                width: parent.width - 24px;
+                text: root.f.label;
+                color: Theme.ink;
+                font-size: 12.5px;
+                wrap: word-wrap;
+            }
+        }
+        if root.f.kind == "text": Field {
+            text: root.f.value;
+            edited => { Api.sup-field(root.f.name, self.text); }
+        }
+        if root.f.kind == "textarea": Field {
+            multi: true;
+            height: 120px;
+            text: root.f.value;
+            edited => { Api.sup-field(root.f.name, self.text); }
+        }
+        if root.f.kind == "select": ComboBox {
+            model: root.f.options;
+            current-index: root.f.sel;
+            selected(v) => { Api.sup-pick(root.f.name, self.current-index); }
+        }
+        if root.f.kind == "radio": VerticalLayout {
+            spacing: 6px;
+            for o[i] in root.f.options: Rectangle {
+                height: max(36px, rl.preferred-height + 14px);
+                border-radius: 9px;
+                background: root.f.sel == i ? Theme.accent-soft : rta.has-hover ? Theme.hover : Theme.field;
+                border-width: root.f.sel == i ? 1.5px : 0px;
+                border-color: Theme.accent;
+                rl := HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 10px;
+                    Rectangle {
+                        width: 16px;
+                        height: 16px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 8px;
+                        border-width: root.f.sel == i ? 5px : 1.5px;
+                        border-color: root.f.sel == i ? Theme.accent : Theme.faint;
+                    }
+                    Text { text: o; color: Theme.ink; font-size: 13.5px; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+                }
+                rta := TouchArea { mouse-cursor: pointer; clicked => { Api.sup-pick(root.f.name, i); } }
+            }
+        }
+    }
+}
+
+export component SupportPane inherits Rectangle {
+    background: Theme.panel;
+    clip: true;
+
+    // ── список заявок ──
+    if St.sup-view == 0: VerticalLayout {
+        Head {
+            title: "Поддержка FunPay";
+            sub: St.sup-loading ? "обновляю…" : St.sup-n-all + " заявок";
+            VerticalLayout { alignment: center; IconButton { icon: @image-url("icons/refresh.svg"); clicked => { Api.sup-refresh(); } } }
+            VerticalLayout { alignment: center; IconButton { icon: @image-url("icons/open_in_new.svg"); clicked => { Api.sup-web(); } } }
+        }
+        HorizontalLayout {
+            padding: 12px;
+            padding-bottom: 6px;
+            spacing: 8px;
+            alignment: start;
+            Chip { text: "Все"; count: St.sup-n-all; on: St.sup-filter == 0; clicked => { Api.sup-filter-set(0); } }
+            Chip { text: "Актуальные"; count: St.sup-n-open; on: St.sup-filter == 1; clicked => { Api.sup-filter-set(1); } }
+            Chip { text: "Закрытые"; count: St.sup-n-closed; on: St.sup-filter == 2; clicked => { Api.sup-filter-set(2); } }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            ScrollView {
+                content-width: self.visible-width;
+                VerticalLayout {
+                    for t in St.sup-tickets: TicketRow { t: t; }
+                    if St.sup-more: HorizontalLayout {
+                        alignment: center;
+                        padding-top: 12px;
+                        Rectangle {
+                            height: 34px;
+                            width: ml.preferred-width + 28px;
+                            border-radius: 17px;
+                            background: mta.has-hover ? Theme.hover : Theme.field;
+                            ml := Text {
+                                text: St.sup-more-busy ? "Загружаю…" : "Показать старые заявки";
+                                color: Theme.accent;
+                                font-size: 13px;
+                                font-weight: 600;
+                            }
+                            mta := TouchArea { mouse-cursor: pointer; clicked => { Api.sup-more(); } }
+                        }
+                    }
+                    Rectangle { height: 84px; }
+                }
+            }
+            if St.sup-tickets.length == 0 && !St.sup-loading: VerticalLayout {
+                alignment: center;
+                spacing: 10px;
+                padding: 30px;
+                Text {
+                    text: St.sup-error != "" ? St.sup-error : St.sup-n-all > 0 ? (St.sup-filter == 1 ? "Актуальных заявок нет: все вопросы закрыты." : "Здесь пока пусто.") : "Заявок пока нет. Если что-то пошло не так со сделкой или аккаунтом, напиши в поддержку FunPay прямо отсюда.";
+                    color: St.sup-error != "" ? Theme.danger : Theme.muted;
+                    font-size: 13.5px;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                }
+            }
+            if St.sup-tickets.length == 0 && St.sup-loading: Text { text: "Загружаю заявки…"; color: Theme.muted; font-size: 13.5px; }
+            // новая заявка: круглая кнопка как «новое сообщение»
+            Rectangle {
+                x: parent.width - 74px;
+                y: parent.height - 74px;
+                width: 56px;
+                height: 56px;
+                border-radius: 28px;
+                background: nta.has-hover ? Theme.accent.darker(8%) : Theme.accent;
+                drop-shadow-blur: 10px;
+                drop-shadow-offset-y: 3px;
+                drop-shadow-color: Theme.shadow;
+                Image { source: @image-url("icons/add.svg"); width: 26px; colorize: Theme.on-accent; }
+                nta := TouchArea { mouse-cursor: pointer; clicked => { Api.sup-new(); } }
+            }
+        }
+    }
+
+    // ── переписка по заявке ──
+    if St.sup-view == 1: VerticalLayout {
+        property <bool> info-open;
+        Head {
+            title: St.sup-title != "" ? St.sup-title : "Заявка #" + St.sup-id;
+            sub: "Заявка #" + St.sup-id + " · " + St.sup-status;
+            VerticalLayout { alignment: center; IconButton { icon: @image-url("icons/refresh.svg"); clicked => { Api.sup-ticket(St.sup-id); } } }
+            VerticalLayout {
+                alignment: center;
+                IconButton { icon: @image-url("icons/more_vert.svg"); clicked => { menu.show(); } }
+            }
+        }
+        menu := PopupWindow {
+            x: parent.width - 230px;
+            y: 50px;
+            MenuCard {
+                width: 220px;
+                VerticalLayout {
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    MenuItem { icon: @image-url("icons/open_in_new.svg"); text: "Открыть в браузере"; activated => { Api.sup-web(); } }
+                    if St.sup-can-reply: MenuItem { icon: @image-url("icons/check_circle.svg"); text: "Закрыть заявку"; danger: true; activated => { Api.sup-close-ticket(); } }
+                }
+            }
+        }
+        Wall {
+            vertical-stretch: 1;
+            sv := ScrollView {
+                content-width: self.visible-width;
+                property <length> ch: list.preferred-height;
+                changed ch => { self.content-y = min(0px, self.visible-height - self.content-height); }
+                list := VerticalLayout {
+                    padding-top: 10px;
+                    padding-bottom: 12px;
+                    // сведения о заявке
+                    if St.sup-info.length > 0: HorizontalLayout {
+                        alignment: center;
+                        padding-bottom: 10px;
+                        Rectangle {
+                            width: min(sv.visible-width - 40px, 460px);
+                            height: info.preferred-height + 20px;
+                            border-radius: 14px;
+                            background: Theme.panel.with-alpha(0.92);
+                            info := VerticalLayout {
+                                x: 14px;
+                                y: 10px;
+                                width: parent.width - 28px;
+                                height: self.preferred-height;
+                                spacing: 5px;
+                                for kv in St.sup-info: HorizontalLayout {
+                                    spacing: 10px;
+                                    Text { text: kv.k; color: Theme.muted; font-size: 12.5px; width: 120px; wrap: word-wrap; }
+                                    Text { text: kv.v; color: Theme.ink; font-size: 12.5px; wrap: word-wrap; horizontal-stretch: 1; }
+                                }
+                            }
+                        }
+                    }
+                    for m in St.sup-msgs: Bubble { m: m; avail: sv.visible-width; }
+                }
+            }
+            if St.sup-loading && St.sup-msgs.length == 0: Pill { text: "Загружаю переписку…"; }
+        }
+        if St.sup-error != "": Rectangle {
+            height: et.preferred-height + 14px;
+            background: Theme.danger.with-alpha(0.12);
+            et := Text { text: St.sup-error; color: Theme.danger; font-size: 12.5px; wrap: word-wrap; width: parent.width - 24px; horizontal-alignment: center; }
+        }
+        if St.sup-files != "": Rectangle {
+            height: 32px;
+            background: Theme.panel;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 12px;
+                spacing: 8px;
+                Image { source: @image-url("icons/attach_file.svg"); width: 16px; colorize: Theme.accent; y: (parent.height - self.height) / 2; }
+                Text { text: St.sup-files; color: Theme.accent; font-size: 12.5px; vertical-alignment: center; horizontal-stretch: 1; }
+                Text {
+                    text: "убрать";
+                    color: Theme.muted;
+                    font-size: 12.5px;
+                    vertical-alignment: center;
+                    TouchArea { mouse-cursor: pointer; clicked => { Api.sup-files-clear(); } }
+                }
+            }
+        }
+        if St.sup-can-reply: Composer { send(t) => { Api.sup-reply(t); } }
+        if !St.sup-can-reply && !St.sup-loading: Rectangle {
+            height: 48px;
+            background: Theme.panel;
+            Rectangle { height: 1px; y: 0; background: Theme.line; }
+            Text { text: "Заявка закрыта. Если вопрос остался, создай новую."; color: Theme.muted; font-size: 13px; }
+        }
+    }
+
+    // ── новая заявка ──
+    if St.sup-view == 2: VerticalLayout {
+        property <string> msg;
+        Head { title: "Новая заявка"; sub: "в поддержку FunPay"; }
+        fsv := ScrollView {
+            vertical-stretch: 1;
+            content-width: self.visible-width;
+            content-height: form.preferred-height;
+            Rectangle {
+                form := VerticalLayout {
+                    width: min(560px, fsv.visible-width - 32px);
+                    x: (fsv.visible-width - self.width) / 2;
+                    padding-top: 16px;
+                    padding-bottom: 24px;
+                    spacing: 6px;
+                    Text { text: "С чем нужна помощь?"; color: Theme.muted; font-size: 12px; font-weight: 650; }
+                    if St.sup-cats.length == 0: Text { text: St.sup-loading ? "Загружаю разделы…" : ""; color: Theme.muted; font-size: 13px; }
+                    if St.sup-cats.length > 0: ComboBox {
+                        model: St.sup-cats;
+                        current-index: St.sup-cat;
+                        selected(v) => { Api.sup-cat-pick(self.current-index); }
+                    }
+                    Rectangle { height: 8px; }
+                    if St.sup-cat >= 0 && St.sup-loading && St.sup-fields.length == 0: Text { text: "Загружаю поля…"; color: Theme.muted; font-size: 13px; }
+                    for f in St.sup-fields: FormField {
+                        visible: f.visible;
+                        height: f.visible ? self.preferred-height : 0px;
+                        f: f;
+                    }
+                    if St.sup-cat >= 0 && St.sup-fields.length > 0: VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "Опиши проблему"; color: Theme.muted; font-size: 12px; font-weight: 650; }
+                        Field { multi: true; height: 140px; text <=> msg; placeholder: "Что случилось, номер заказа, что уже пробовал"; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            padding-top: 4px;
+                            Rectangle {
+                                height: 34px;
+                                width: al.preferred-width + 22px;
+                                border-radius: 9px;
+                                background: ata.has-hover ? Theme.hover : Theme.field;
+                                al := HorizontalLayout {
+                                    alignment: center;
+                                    spacing: 6px;
+                                    Image { source: @image-url("icons/attach_file.svg"); width: 17px; colorize: Theme.accent; y: (parent.height - self.height) / 2; }
+                                    Text { text: St.sup-files != "" ? St.sup-files : "Прикрепить файл"; color: Theme.accent; font-size: 13px; font-weight: 600; vertical-alignment: center; }
+                                }
+                                ata := TouchArea { mouse-cursor: pointer; clicked => { Api.sup-attach(); } }
+                            }
+                            if St.sup-files != "": Text {
+                                text: "убрать";
+                                color: Theme.muted;
+                                font-size: 12.5px;
+                                vertical-alignment: center;
+                                TouchArea { mouse-cursor: pointer; clicked => { Api.sup-files-clear(); } }
+                            }
+                        }
+                    }
+                    if St.sup-error != "": Text { text: St.sup-error; color: Theme.danger; font-size: 13px; wrap: word-wrap; }
+                    Rectangle { height: 6px; }
+                    if St.sup-cat >= 0 && St.sup-fields.length > 0: PrimaryButton {
+                        text: "Отправить заявку";
+                        busy: St.sup-busy;
+                        clicked => { Api.sup-create(msg); }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -522,6 +522,16 @@ export component SettingsView inherits Rectangle {
                             Api.open-deals(0);
                         }
                     }
+                    SettingRow {
+                        icon: @image-url("icons/help.svg");
+                        title: "Поддержка FunPay";
+                        hint: "Заявки и переписка с поддержкой FunPay";
+                        has-toggle: false;
+                        clicked => {
+                            St.settings-open = false;
+                            Api.sup-open();
+                        }
+                    }
                     Rectangle { height: 1px; background: Theme.line; }
                     SettingRow {
                         icon: @image-url("icons/short_text.svg");

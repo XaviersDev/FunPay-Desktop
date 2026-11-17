@@ -1,6 +1,6 @@
 [package]
 name = "funpay-tools-desktop"
-version = "4.5.4"
+version = "4.5.5"
 edition = "2021"
 build = "build.rs"
 
@@ -49,3 +49,14 @@ tray-icon = { version = "0.21", default-features = false }
 i-slint-backend-winit = { path = "patches/i-slint-backend-winit-1.18.1" }
 # WebView2Loader.dll грузится при первом вызове, а не при старте exe (см. patches/webview2-com-sys)
 webview2-com-sys = { path = "patches/webview2-com-sys-0.39.1" }
+
+[profile.fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+strip = true
+
+[profile.fast.package."*"]
+opt-level = 3
+codegen-units = 1

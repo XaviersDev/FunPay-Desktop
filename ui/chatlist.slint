@@ -95,7 +95,7 @@ export component Rail inherits Rectangle {
             col := VerticalLayout {
                 for f in St.folders: RailItem {
                     f: f;
-                    on: St.folder == f.id && St.pane != 4 && St.pane != 5;
+                    on: St.folder == f.id && St.pane != 4 && St.pane != 5 && St.pane != 6;
                 }
                 // сделки и финансы: тот же вид, что у папок
                 Rectangle {
@@ -141,6 +141,29 @@ export component Rail inherits Rectangle {
                     lta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => { St.settings-open = false; Api.open-lots(); }
+                    }
+                }
+                // поддержка FunPay
+                Rectangle {
+                    height: 62px;
+                    background: St.pane == 6 ? Theme.rail-on : suta.has-hover ? #ffffff0d : transparent;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("icons/help.svg");
+                                width: 25px;
+                                height: 25px;
+                                colorize: St.pane == 6 ? white : Theme.rail-tx;
+                            }
+                        }
+                        Text { text: "Поддержка"; color: St.pane == 6 ? white : Theme.rail-tx; font-size: 11px; font-weight: 550; horizontal-alignment: center; }
+                    }
+                    suta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { St.settings-open = false; Api.sup-open(); }
                     }
                 }
                 // плагины: меню выезжает слева, как настройки

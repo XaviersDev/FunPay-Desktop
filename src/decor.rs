@@ -1,10 +1,10 @@
 //! Рамки для аватарок и баннеры профиля FunPay Tools, как в расширении.
-//! Кто что носит: decor.json на GitHub сайта (его пишет воркер fpt-promo). Картинки: funpay.tools/decor/.
+//! Кто что носит: decor.json на GitHub сайта (его пишет воркер fpt-promo). Картинки: jsDelivr (копия папки decor с GitHub), чтобы не тратить лимит Vercel.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-pub const BASE: &str = "https://funpay.tools/decor/";
+pub const BASE: &str = "https://cdn.jsdelivr.net/gh/XaviersDev/FunPayTools-Site@main/decor/";
 
 /// (номер, название, файл)
 pub const FRAMES: [(i32, &str, &str); 30] = [

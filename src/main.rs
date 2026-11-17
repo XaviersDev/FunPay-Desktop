@@ -25,6 +25,8 @@ mod update;
 mod demo;
 mod desc;
 mod decor;
+mod support;
+mod sup_ui;
 mod fptacc;
 mod fp;
 mod fpt;
@@ -844,6 +846,23 @@ fn setup_features(app: &AppWindow, cfg: Arc<Mutex<config::Config>>, demo: bool) 
     api.on_lot_delete(|id| {
         with_ui(|u| u.lot_delete(id.to_string()));
     });
+    api.on_sup_open(|| { with_ui(|u| u.sup_open()); });
+    api.on_sup_refresh(|| { with_ui(|u| u.sup_refresh()); });
+    api.on_sup_more(|| { with_ui(|u| u.sup_more()); });
+    api.on_sup_filter_set(|i| { with_ui(|u| u.sup_filter_set(i)); });
+    api.on_sup_ticket(|id| { with_ui(|u| u.sup_ticket(id.to_string())); });
+    api.on_sup_back(|| { with_ui(|u| u.sup_back()); });
+    api.on_sup_new(|| { with_ui(|u| u.sup_new()); });
+    api.on_sup_cat_pick(|i| { with_ui(|u| u.sup_cat_pick(i)); });
+    api.on_sup_field(|n, v| { with_ui(|u| u.sup_field(n.to_string(), v.to_string())); });
+    api.on_sup_pick(|n, i| { with_ui(|u| u.sup_pick(n.to_string(), i)); });
+    api.on_sup_create(|m| { with_ui(|u| u.sup_create(m.to_string())); });
+    api.on_sup_reply(|m| { with_ui(|u| u.sup_reply(m.to_string())); });
+    api.on_sup_attach(|| { with_ui(|u| u.sup_attach()); });
+    api.on_sup_files_clear(|| { with_ui(|u| u.sup_files_clear()); });
+    api.on_sup_close_ticket(|| { with_ui(|u| u.sup_close_ticket()); });
+    api.on_sup_web(|| { with_ui(|u| u.sup_web()); });
+    api.on_sup_file_open(|s| { with_ui(|u| u.sup_file_open(s.to_string())); });
     api.on_lot_web(|id| {
         with_ui(|u| u.lot_web(id.to_string()));
     });

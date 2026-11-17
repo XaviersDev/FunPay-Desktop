@@ -1,0 +1,1 @@
+cargo build --profile fast

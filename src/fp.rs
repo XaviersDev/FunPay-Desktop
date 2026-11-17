@@ -230,6 +230,19 @@ impl Fp {
         }
     }
 
+    /// Для центра поддержки (support.funpay.com): клиент с прокси аккаунта, куки FunPay и их приём.
+    pub fn raw_http(&self) -> &Client {
+        &self.http
+    }
+
+    pub fn cookie_line(&self) -> String {
+        self.cookie_header(false)
+    }
+
+    pub fn absorb(&mut self, headers: &HeaderMap) {
+        self.capture(headers);
+    }
+
     fn cookie_header(&self, no_session: bool) -> String {
         let mut s = format!("golden_key={}", self.gk);
         if !self.cookies.contains_key("cookie_prefs") {

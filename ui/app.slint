@@ -1,7 +1,7 @@
 import { Palette } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { St, Api } from "globals.slint";
-import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan, LotRow, LotSection, LotFieldRow, ThemeCard, Anim, PluginRow, PUiRow, PCell, CatPlugin, CatPack } from "types.slint";
+import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan, LotRow, LotSection, LotFieldRow, ThemeCard, Anim, PluginRow, PUiRow, PCell, CatPlugin, CatPack, SupTicket, SupMsg, SupField, SupFile } from "types.slint";
 import { DealsPane } from "deals.slint";
 import { MiniBrowser, MiniBar } from "mini.slint";
 import { TitleBar } from "widgets.slint";
@@ -11,6 +11,7 @@ import { LoginView, SettingsView, ImageViewer, UserCard, ProfilePane, OrderPane,
 import { TemplatesDialog } from "templates.slint";
 import { EpicDialog, NotesDialog } from "extras.slint";
 import { AccountDialog } from "account.slint";
+import { SupportPane } from "support.slint";
 import { NotifyWindow } from "notify.slint";
 import { WidgetWindow } from "widget.slint";
 import { ProxyDialog, WidgetsDialog, DiscordDialog } from "desk.slint";
@@ -25,7 +26,7 @@ import "../assets/fonts/Onest-Medium.ttf";
 import "../assets/fonts/Onest-SemiBold.ttf";
 import "../assets/fonts/Onest-Bold.ttf";
 
-export { Theme, St, Api, Anim, LotSection, ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan, LotRow, LotFieldRow, ThemeCard, NotifyWindow, WidgetWindow }
+export { Theme, St, Api, Anim, LotSection, ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, TplRow, AutoRow, LinkSpan, LotRow, LotFieldRow, ThemeCard, NotifyWindow, WidgetWindow, SupTicket, SupMsg, SupField, SupFile }
 
 component Edge inherits TouchArea {
     in property <int> dir;
@@ -207,6 +208,12 @@ export component AppWindow inherits Window {
                 height: root.content-h;
             }
             if St.logged-in && St.pane == 4: DealsPane {
+                x: root.right-x;
+                y: 0;
+                width: root.right-w;
+                height: root.content-h;
+            }
+            if St.logged-in && St.pane == 6: SupportPane {
                 x: root.right-x;
                 y: 0;
                 width: root.right-w;

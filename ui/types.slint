@@ -421,3 +421,41 @@ export struct AccNick {
     key: string,
     style: NickStyle,
 }
+
+// поддержка FunPay
+export struct SupTicket {
+    id: string,
+    title: string,
+    status: string,
+    date: string,
+    tone: int,          // 0 открыта, 1 ждёт ответа, 2 решена, 3 закрыта
+}
+
+export struct SupFile {
+    name: string,
+    url: string,
+    image: bool,
+}
+
+export struct SupMsg {
+    author: string,
+    text: string,
+    time: string,
+    mine: bool,
+    letter: string,
+    avatar: image,
+    has-avatar: bool,
+    files: [SupFile],
+    first: bool,        // первое в серии подряд от одного автора: показываем имя и аватар
+}
+
+export struct SupField {
+    name: string,
+    kind: string,       // text | textarea | select | radio
+    label: string,
+    required: bool,
+    options: [string],
+    sel: int,
+    value: string,
+    visible: bool,
+}

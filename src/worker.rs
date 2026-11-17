@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub enum Cmd {
+    /// Поддержка FunPay (support.funpay.com)
+    Sup(SupOp),
     Login(String),
     Logout,
     Open { id: String, kind: i32, gen: u64 },
@@ -79,7 +81,21 @@ struct Open {
     page_at: Instant,
 }
 
+/// Действия центра поддержки FunPay
+pub enum SupOp {
+    List { gen: u64 },
+    More { gen: u64, page: u32 },
+    Open { id: String, gen: u64 },
+    Cats,
+    Fields { cat: String, nick: String },
+    Create { cat: String, values: Vec<(String, String)>, msg: String, files: Vec<String> },
+    Reply { id: String, msg: String, files: Vec<String> },
+    Upload { ticket: String, path: std::path::PathBuf },
+    Close { id: String },
+}
+
 pub struct Worker {
+    sup: crate::support::Support,
     cfg: Arc<Mutex<Config>>,
     fp: Option<Fp>,
     open: Option<Open>,
@@ -106,6 +122,7 @@ fn is_fp_chat(kind: i32) -> bool {
 impl Worker {
     fn new(cfg: Arc<Mutex<Config>>) -> Self {
         Self {
+            sup: Default::default(),
             cfg,
             fp: None,
             open: None,
@@ -463,6 +480,7 @@ impl Worker {
                 let text = crate::money::frozen_text(&crate::money::frozen_merge(a, b));
                 post(move |u| u.frozen_loaded(text));
             }
+            Cmd::Sup(op) => self.sup_op(op),
             Cmd::LoadLots { gen } => {
                 let Some(fp) = self.fp.as_mut() else { return };
                 let res = fp.my_lots();
@@ -857,6 +875,69 @@ impl Worker {
             }
             post(move |u| u.send(Cmd::DescCleanup { code, session, text }));
         });
+    }
+
+    fn sup_op(&mut self, op: SupOp) {
+        let Some(fp) = self.fp.as_mut() else { return };
+        let sup = &mut self.sup;
+        match op {
+            SupOp::List { gen } => {
+                let r = sup.tickets(fp);
+                post(move |u| u.sup_listed(gen, r, false));
+            }
+            SupOp::More { gen, page } => {
+                let r = sup.more(fp, page, crate::support::LIST_PAGES);
+                post(move |u| u.sup_listed(gen, r, true));
+            }
+            SupOp::Open { id, gen } => {
+                let r = sup.details(fp, &id);
+                post(move |u| u.sup_opened(gen, r));
+            }
+            SupOp::Cats => {
+                let r = sup.categories(fp);
+                post(move |u| u.sup_cats(r));
+            }
+            SupOp::Fields { cat, nick } => {
+                let r = sup.fields(fp, &cat, &nick);
+                post(move |u| u.sup_fields_loaded(cat, r));
+            }
+            SupOp::Create { cat, values, msg, files } => {
+                let r = sup.create(fp, &cat, values, &msg, &files);
+                post(move |u| u.sup_created(r));
+            }
+            SupOp::Reply { id, msg, files } => {
+                let r = sup.comment(fp, &id, &msg, &files);
+                post(move |u| u.sup_replied(id, r));
+            }
+            SupOp::Upload { ticket, path } => {
+                let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "file".into());
+                let r = match std::fs::read(&path) {
+                    Ok(bytes) if bytes.len() > 20 * 1024 * 1024 => Err("Файл больше 20 МБ.".to_string()),
+                    Ok(bytes) => {
+                        let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
+                        let mime = match ext.as_str() {
+                            "png" => "image/png",
+                            "jpg" | "jpeg" => "image/jpeg",
+                            "gif" => "image/gif",
+                            "webp" => "image/webp",
+                            "pdf" => "application/pdf",
+                            "txt" | "log" => "text/plain",
+                            "mp4" => "video/mp4",
+                            "zip" => "application/zip",
+                            _ => "application/octet-stream",
+                        };
+                        sup.upload(fp, &ticket, &name, mime, bytes)
+                    }
+                    Err(e) => Err(format!("Не открыть файл: {e}")),
+                };
+                post(move |u| u.sup_uploaded(name, r));
+            }
+            SupOp::Close { id } => {
+                let r = sup.close(fp, &id);
+                post(move |u| u.sup_closed(id, r));
+            }
+        }
+        self.save_cookies();
     }
 
     fn promo_link(&mut self, fpid: String) {

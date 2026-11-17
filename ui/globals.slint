@@ -1,4 +1,4 @@
-import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, StatTile, SchedRow, PackItem, TplRow, AutoRow, LotRow, LotSection, LotFieldRow, ThemeCard, Anim, PluginRow, PUiRow, PCell, CatPlugin, CatPack, Ring, DecorBanner, AccPlan, AccNick } from "types.slint";
+import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, StatTile, SchedRow, PackItem, TplRow, AutoRow, LotRow, LotSection, LotFieldRow, ThemeCard, Anim, PluginRow, PUiRow, PCell, CatPlugin, CatPack, Ring, DecorBanner, AccPlan, AccNick, SupTicket, SupMsg, SupField } from "types.slint";
 
 export global St {
     in-out property <string> version;
@@ -239,6 +239,30 @@ export global St {
     in-out property <[Ring]> decor-rings;
     in-out property <[DecorBanner]> decor-banners;
     in-out property <int> me-frame;
+    // поддержка FunPay
+    in-out property <int> sup-view;             // 0 список, 1 заявка, 2 новая заявка
+    in-out property <bool> sup-loading;
+    in-out property <string> sup-error;
+    in-out property <[SupTicket]> sup-tickets;
+    in-out property <int> sup-filter;
+    in-out property <bool> sup-more;
+    in-out property <bool> sup-more-busy;
+    in-out property <int> sup-n-all;
+    in-out property <int> sup-n-open;
+    in-out property <int> sup-n-closed;
+    in-out property <string> sup-id;
+    in-out property <string> sup-title;
+    in-out property <string> sup-status;
+    in-out property <int> sup-tone;
+    in-out property <[KV]> sup-info;
+    in-out property <[SupMsg]> sup-msgs;
+    in-out property <bool> sup-can-reply;
+    in-out property <bool> sup-busy;
+    in-out property <string> sup-files;
+    in-out property <int> sup-sent-n;
+    in-out property <[string]> sup-cats;
+    in-out property <int> sup-cat: -1;
+    in-out property <[SupField]> sup-fields;
     in-out property <int> pf-frame;
     in-out property <int> card-frame;
     // 0: баннер из описания (обложка), больше 0: тонкий баннер FunPay Tools с этим соотношением сторон
@@ -584,6 +608,24 @@ export global Api {
     // цветные ники
     callback set-epic-anim(bool);
     callback epic-get();
+    // поддержка FunPay
+    callback sup-open();
+    callback sup-refresh();
+    callback sup-more();
+    callback sup-filter-set(int);
+    callback sup-ticket(string);
+    callback sup-back();
+    callback sup-new();
+    callback sup-cat-pick(int);
+    callback sup-field(string, string);
+    callback sup-pick(string, int);
+    callback sup-create(string);
+    callback sup-reply(string);
+    callback sup-attach();
+    callback sup-files-clear();
+    callback sup-close-ticket();
+    callback sup-web();
+    callback sup-file-open(string);
     // аккаунт FunPay Tools
     callback acc-show();
     callback acc-tg-login();

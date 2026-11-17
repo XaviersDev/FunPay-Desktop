@@ -145,6 +145,9 @@ pub fn run(spec: &str) {
             }
         });
     }
+    if scene.starts_with("sup") {
+        crate::ui::with_ui(|u| sup_demo(u, scene));
+    }
     app.show().unwrap();
     if scene == "pluginoff" {
         app.window().dispatch_event(slint::platform::WindowEvent::PointerMoved { position: slint::LogicalPosition::new(520.0, 400.0) });
@@ -199,4 +202,58 @@ pub fn run(spec: &str) {
     }
     img.save(path).unwrap();
     eprintln!("saved {path}");
+}
+
+fn sup_demo(u: &mut crate::ui::Ui, scene: &str) {
+    use crate::support::{Attach, Comment, Details, Field, Ticket};
+    u.sup_open();
+    let t = |id: &str, title: &str, st: &str, d: &str| Ticket { id: id.into(), title: title.into(), status: st.into(), date: d.into(), active: st != "Закрыта" };
+    let g = u.ext.sup.gen;
+    u.sup_listed(g, Ok(crate::support::Page { next: Some(4), total: 37, items: vec![
+        t("4821937", "Покупатель не подтверждает заказ", "Ждёт ответа", "сегодня, 14:02"),
+        t("4790112", "Не пришли деньги за продажу", "Открыта", "вчера, 21:40"),
+        t("4655301", "Вопрос по блокировке лота", "Решена", "12 ноября"),
+        t("4510077", "Смена почты аккаунта", "Закрыта", "2 ноября"),
+    ] }), false);
+    if scene == "supticket" {
+        u.sup_ticket("4821937".into());
+        let g = u.ext.sup.gen;
+        let c = |a: &str, txt: &str, tm: &str, mine: bool| Comment { author: a.into(), text: txt.into(), time: tm.into(), mine, avatar: String::new(), files: vec![] };
+        let mut first = c("XaviersDev", "Здравствуйте. Покупатель получил товар ещё вчера, но заказ #HQ7KD2 не подтверждает и не отвечает в чате. Прикладываю скрин переписки.", "14:02", true);
+        first.files = vec![Attach { name: "chat_screen.png".into(), url: "https://example.com/a.png".into(), image: true }];
+        u.sup_opened(g, Ok(Details {
+            id: "4821937".into(),
+            title: "Покупатель не подтверждает заказ".into(),
+            status: "Ждёт ответа".into(),
+            created: "17 ноября 2026, 14:02".into(),
+            responsible: "Анна".into(),
+            fields: vec![("Номер заказа".into(), "HQ7KD2".into()), ("Роль".into(), "Продавец".into())],
+            comments: vec![
+                first,
+                c("Анна", "Здравствуйте! Спасибо за обращение.", "14:31", false),
+                c("Анна", "Мы связались с покупателем. Если в течение 24 часов он не ответит, заказ будет подтверждён автоматически.", "14:32", false),
+                c("XaviersDev", "Понял, спасибо!", "14:35", true),
+            ],
+            can_reply: true,
+        }));
+    }
+    if scene == "supnew" {
+        u.sup_new();
+        u.sup_cats(Ok(vec![("1".into(), "Проблема с заказом".into()), ("2".into(), "Аккаунт и безопасность".into()), ("3".into(), "Финансы и вывод".into())]));
+        u.sup_cat_pick(0);
+        let f = |n: &str, k: &str, l: &str, req: bool, o: &[&str]| Field {
+            name: n.into(), kind: k.into(), label: l.into(), required: req,
+            options: o.iter().map(|x| (x.to_string(), x.to_string())).collect(), cond: None, default: String::new(),
+        };
+        let mut note = f("note3", "note", "Для подтверждения нескольких заказов в одном сообщении составьте два списка: где покупатель точно забыл подтвердить и где ситуация неоднозначная.", false, &[]);
+        note.cond = Some(("ticket[fields][3]".into(), "Покупатель забыл подтвердить заказ".into()));
+        u.sup_fields_loaded("1".into(), Ok(vec![
+            f("ticket[fields][1]", "text", "Номер заказа", true, &[]),
+            f("ticket[fields][2]", "radio", "Вы покупатель или продавец?", true, &["Покупатель", "Продавец"]),
+            f("ticket[fields][3]", "select", "Тема заявки", true, &["Покупатель забыл подтвердить заказ", "У меня есть проблема с покупателем в заказе"]),
+            note,
+        ]));
+        u.sup_pick("ticket[fields][2]".into(), 1);
+        u.sup_pick("ticket[fields][3]".into(), 0);
+    }
 }

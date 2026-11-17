@@ -157,6 +157,8 @@ pub struct Ext {
     pub acc_pay: Option<(String, String)>,
     pub acc_pay_gen: u64,
     pub acc_login_gen: u64,
+    /// поддержка FunPay
+    pub sup: crate::sup_ui::SupState,
     pub descs: HashMap<String, (std::time::Instant, crate::desc::Desc)>,
     pub card_uid: String,
     pub tabs: Vec<crate::ui::Tab>,
@@ -1743,6 +1745,7 @@ impl Ui {
         }
         self.desc_image(&key, &img);
         self.decor_image_ready(&key, &img);
+        self.sup_image_ready(&key);
         self.accounts_image(&key);
         if !self.sendbox.is_empty() && key.starts_with(&format!("{THUMB}|file://")) {
             self.rebuild_sendbox();
