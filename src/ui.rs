@@ -172,6 +172,10 @@ pub struct Ext {
     pub frozen: String,
     pub lots_gen: u64,
     pub lots: Vec<crate::lots::MyLot>,
+    /// глобальный поиск по сообщениям: номер запроса, чтобы старые ответы не мешали
+    pub ms_gen: u64,
+    pub search_backfill_uid: String,
+    pub search_jump: Option<(String, u64)>,
     pub lots_query: String,
     pub lots_filter: i32,
     pub lot_lang: i32,
@@ -192,29 +196,56 @@ pub struct Tab {
 
 thread_local! {
     static UI: RefCell<Option<Ui>> = const { RefCell::new(None) };
+    /// события, которые не удалось выполнить прямо сейчас (интерфейс занят или ещё не готов);
+    /// опустошается при каждом завершении with_ui — события не теряются
+    static PENDING: RefCell<std::collections::VecDeque<Box<dyn FnOnce(&mut Ui)>>> = const { RefCell::new(std::collections::VecDeque::new()) };
 }
 
 pub fn install(ui: Ui) {
     UI.with(|u| *u.borrow_mut() = Some(ui));
-}
-
-pub fn with_ui<R>(f: impl FnOnce(&mut Ui) -> R) -> Option<R> {
-    UI.with(|u| u.try_borrow_mut().ok().and_then(|mut g| g.as_mut().map(f)))
+    // опустошаем всё, что накопилось до готовности интерфейса
+    with_ui(|_| {});
 }
 
 /// Выполнить в UI-потоке (из любого потока).
 pub fn post(f: impl FnOnce(&mut Ui) + Send + 'static) {
-    let _ = slint::invoke_from_event_loop(move || run_or_retry(Box::new(f), 0));
+    let _ = slint::invoke_from_event_loop(move || run_one(Some(Box::new(f))));
 }
 
-/// Если интерфейс сейчас занят (идёт другой обработчик), не теряем событие, а пробуем чуть позже.
-fn run_or_retry(f: Box<dyn FnOnce(&mut Ui)>, tries: u32) {
-    let busy = UI.with(|u| u.try_borrow_mut().is_err());
-    if busy && tries < 50 {
-        slint::Timer::single_shot(std::time::Duration::from_millis(15), move || run_or_retry(f, tries + 1));
-        return;
+/// Если интерфейс сейчас занят (идёт другой обработчик) — откладываем в очередь, не теряя событие.
+fn run_one(mut f: Option<Box<dyn FnOnce(&mut Ui)>>) {
+    UI.with(|u| {
+        let Ok(mut g) = u.try_borrow_mut() else { return };
+        let Some(ui) = g.as_mut() else { return };
+        if let Some(f) = f.take() {
+            f(ui);
+            drain(ui);
+        }
+    });
+    if let Some(f) = f {
+        PENDING.with(|p| p.borrow_mut().push_back(f));
     }
-    with_ui(f);
+}
+
+fn drain(ui: &mut Ui) {
+    loop {
+        let next = PENDING.with(|p| p.borrow_mut().pop_front());
+        match next {
+            Some(f) => f(ui),
+            None => break,
+        }
+    }
+}
+
+/// Выполнить прямо сейчас, только из UI-потока. Возвращает None, если интерфейс занят вложенным вызовом.
+pub fn with_ui<R>(f: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+    UI.with(|u| {
+        let mut g = u.try_borrow_mut().ok()?;
+        let ui = g.as_mut()?;
+        let r = f(ui);
+        drain(ui);
+        Some(r)
+    })
 }
 
 // ---------------------------------------------------------------- цвета и мелочи
@@ -392,6 +423,8 @@ impl Ui {
             s.set_browser_login(false);
         });
         self.update_me();
+        let uid = self.me.id.clone();
+        self.load_cache_for(&uid);
         self.rebuild_chats();
         self.tour_event("logged-in");
         self.stats_tick();
@@ -811,6 +844,7 @@ impl Ui {
                 }
                 self.toast("Убрал из недавних");
             }
+            "export" => self.export_chat(id, kind, arg == "json"),
             _ => {}
         }
         self.rebuild_chats();
@@ -986,6 +1020,9 @@ impl Ui {
         let nick = self.nick(&title);
         self.st(|s| s.set_cur_nick(nick));
         self.save_msgs_cache();
+        let msgs: Vec<Message> = self.cur.as_ref().map(|c| c.msgs.clone()).unwrap_or_default();
+        self.index_chat(&msgs);
+        self.check_msg_search_jump();
         self.rebuild_templates();
     }
 
@@ -1089,6 +1126,8 @@ impl Ui {
         });
         self.rebuild_msgs();
         self.save_msgs_cache();
+        let msgs: Vec<Message> = self.cur.as_ref().map(|c| c.msgs.clone()).unwrap_or_default();
+        self.index_chat(&msgs);
         self.rebuild_templates();
     }
 
@@ -1152,6 +1191,16 @@ impl Ui {
         });
         if n > 0 {
             self.rebuild_msgs();
+            let all = self.cur.as_ref().map(|c| c.msgs.clone()).unwrap_or_default();
+            self.index_chat(&all);
+        }
+        if self.ext.search_jump.is_some() {
+            if n == 0 {
+                self.ext.search_jump = None;
+                self.toast("Не удалось догрузить историю до найденного сообщения");
+            } else {
+                self.check_msg_search_jump();
+            }
         }
     }
 
@@ -3013,6 +3062,9 @@ impl Ui {
 
     /// Сбрасывает всё, что относится к прежнему аккаунту: чаты, экраны, вкладки браузера.
     pub fn reset_account_view(&mut self) {
+        crate::searchidx::set_account("");
+        self.ext.search_backfill_uid.clear();
+        self.ext.search_jump = None;
         self.chats.clear();
         self.cur = None;
         self.pending.clear();
@@ -3054,6 +3106,7 @@ impl Ui {
         self.reset_account_view();
         self.me = Me { id: acc.id.clone(), name: acc.name.clone(), avatar: acc.avatar.clone(), balance: String::new() };
         self.update_me();
+        self.load_cache_for(&acc.id);
         self.rebuild_accounts();
         self.toast(&format!("Аккаунт {}", acc.name));
         self.send(Cmd::UseAccount { gk: acc.golden_key, cookies: acc.cookies });
@@ -3113,6 +3166,7 @@ impl Ui {
             c.save();
         }
         crate::cache::forget(&id);
+        crate::searchidx::forget(&id);
         self.rebuild_accounts();
         self.toast("Аккаунт убран с этого компьютера");
     }

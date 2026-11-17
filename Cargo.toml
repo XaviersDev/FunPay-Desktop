@@ -39,6 +39,7 @@ strip = true
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 wry = { version = "0.57", default-features = false, features = ["os-webview"] }
 tauri-winrt-notification = "0.8"
 rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-mp3"] }

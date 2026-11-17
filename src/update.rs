@@ -197,6 +197,6 @@ mod tests {
         assert_eq!(parse_ver("v4.4.0").unwrap().to_string(), "4.4.0");
         assert_eq!(parse_ver("4.5").unwrap().to_string(), "4.5.0");
         assert!(parse_ver("v4.5.4").unwrap() <= current());
-        assert!(parse_ver("v4.5.3").unwrap() > current());
+        assert!(parse_ver("v4.5.5").unwrap() > current());
     }
 }

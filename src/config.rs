@@ -1,8 +1,9 @@
 //! Настройки и сессия на диске: %APPDATA%\FunPayTools\desktop.json
 
 use serde::{Deserialize, Serialize};
+use base64::Engine as _;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
@@ -42,6 +43,8 @@ pub struct Config {
     pub last_outgoing: BTreeMap<String, String>,
     pub show_flood: bool,
     pub show_gchat: bool,
+    /// замедлять опрос чатов после длительной тишины
+    pub slow_poll: bool,
     pub recent_games: Vec<String>,
     pub sound: bool,
     /// Закреплённые чаты по порядку
@@ -90,6 +93,8 @@ pub struct Config {
     pub inactive_lots: BTreeMap<String, Vec<crate::lots::MyLot>>,
     /// Своя тема из редактора
     pub custom_theme: crate::tgtheme::FpTheme,
+    #[serde(skip)]
+    pub(crate) save_blocked: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -302,6 +307,7 @@ impl Default for Config {
             last_outgoing: BTreeMap::new(),
             show_flood: true,
             show_gchat: true,
+            slow_poll: false,
             recent_games: Vec::new(),
             sound: true,
             pinned_chats: Vec::new(),
@@ -330,6 +336,7 @@ impl Default for Config {
             tour_done: false,
             inactive_lots: BTreeMap::new(),
             custom_theme: Default::default(),
+            save_blocked: false,
         }
     }
 }
@@ -347,20 +354,128 @@ fn path() -> PathBuf {
     dir().join("desktop.json")
 }
 
+const ENC_PREFIX: &str = "FPTENC1|";
+
+/// Извлечь JSON из файла настроек. Возвращает текст и признак открытого текста.
+fn unpack(raw: &str) -> Result<(String, bool), ()> {
+    if let Some(b64) = raw.trim().strip_prefix(ENC_PREFIX) {
+        let dec = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|_| ())?;
+        let dec = crate::dpapi::unprotect(&dec).ok_or(())?;
+        return String::from_utf8(dec).map(|s| (s, false)).map_err(|_| ());
+    }
+    Ok((raw.to_string(), true))
+}
+
+fn backup_unreadable(path: &Path) -> bool {
+    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+    let mut backup = path.with_file_name(format!("{file_name}.bak"));
+    let mut suffix = 1;
+    while backup.exists() {
+        backup = path.with_file_name(format!("{file_name}.bak.{suffix}"));
+        suffix += 1;
+    }
+    match std::fs::rename(path, &backup) {
+        Ok(()) => {
+            crate::log::write(&format!("Не удалось прочитать настройки; оригинал сохранён как {}", backup.display()));
+            true
+        }
+        Err(e) => {
+            crate::log::write(&format!("Не удалось сохранить резервную копию настроек {}: {e}", path.display()));
+            false
+        }
+    }
+}
+
 impl Config {
     pub fn load() -> Self {
-        std::fs::read_to_string(path())
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        let file = path();
+        let raw = match std::fs::read_to_string(&file) {
+            Ok(raw) => raw,
+            Err(e) if file.exists() => {
+                crate::log::write(&format!("Не удалось прочитать файл настроек: {e}"));
+                let mut c = Self::default();
+                c.save_blocked = !backup_unreadable(&file);
+                return c;
+            }
+            Err(_) => return Self::default(),
+        };
+        let (text, plain) = match unpack(&raw) {
+            Ok(data) => data,
+            Err(()) => {
+                crate::log::write("Файл настроек не расшифрован: похоже, он создан другим пользователем Windows");
+                let mut c = Self::default();
+                c.save_blocked = !backup_unreadable(&file);
+                return c;
+            }
+        };
+        match serde_json::from_str::<Self>(&text) {
+            Ok(c) => {
+                if !plain {
+                    // Convert legacy DPAPI files to portable plaintext on first successful load.
+                    c.save();
+                }
+                c
+            }
+            Err(e) => {
+                crate::log::write(&format!("Не удалось прочитать настройки: {e}"));
+                let mut c = Self::default();
+                c.save_blocked = !backup_unreadable(&file);
+                c
+            }
+        }
     }
 
     pub fn save(&self) {
-        if let Ok(s) = serde_json::to_string_pretty(self) {
-            let tmp = path().with_extension("tmp");
-            if std::fs::write(&tmp, s).is_ok() {
-                let _ = std::fs::rename(&tmp, path());
-            }
+        if self.save_blocked {
+            crate::log::write("Настройки не сохранены: исходный файл не удалось безопасно переместить в резервную копию");
+            return;
         }
+        let Ok(s) = serde_json::to_string_pretty(self) else { return };
+        let tmp = path().with_extension("tmp");
+        if std::fs::write(&tmp, s).is_ok() {
+            let _ = std::fs::rename(&tmp, path());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unpack_plain_and_encrypted() {
+        let (text, plain) = unpack("{\"theme\":1}").unwrap();
+        assert_eq!(text, "{\"theme\":1}");
+        assert!(plain);
+        if let Some(enc) = crate::dpapi::protect(b"{\"theme\":2}") {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(enc);
+            let (text, plain) = unpack(&format!("{ENC_PREFIX}{b64}")).unwrap();
+            assert_eq!(text, "{\"theme\":2}");
+            assert!(!plain);
+        }
+        assert!(unpack(&format!("{ENC_PREFIX}!!!")).is_err());
+    }
+
+    #[test]
+    fn unreadable_config_is_backed_up_without_overwriting_existing_backup() {
+        let id = format!("fpt-config-{}-{}", std::process::id(), chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default());
+        let dir = std::env::temp_dir().join(id);
+        std::fs::create_dir(&dir).unwrap();
+        let file = dir.join("desktop.json");
+        let backup = dir.join("desktop.json.bak");
+        let second_backup = dir.join("desktop.json.bak.1");
+        std::fs::write(&file, "encrypted data").unwrap();
+        std::fs::write(&backup, "previous backup").unwrap();
+
+        assert!(backup_unreadable(&file));
+        assert!(!file.exists());
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), "previous backup");
+        assert_eq!(std::fs::read_to_string(&second_backup).unwrap(), "encrypted data");
+
+        std::fs::remove_file(backup).unwrap();
+        std::fs::remove_file(second_backup).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
 }

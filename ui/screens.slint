@@ -600,6 +600,13 @@ export component SettingsView inherits Rectangle {
                         checked: St.show-gchat;
                         toggled(v) => { Api.set-show-gchat(v); }
                     }
+                    SettingRow {
+                        icon: @image-url("icons/tune.svg");
+                        title: "Реже опрашивать в тишине";
+                        hint: "После 5 минут — реже, после 15 минут — до 24 секунд";
+                        checked: St.slow-poll;
+                        toggled(v) => { St.slow-poll = v; Api.set-slow-poll(v); }
+                    }
                     Rectangle { height: 1px; background: Theme.line; }
                     VerticalLayout {
                         padding-left: 20px;

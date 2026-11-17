@@ -1867,6 +1867,7 @@ dependencies = [
  "slint-build",
  "tauri-winrt-notification",
  "tray-icon",
+ "windows-sys 0.60.2",
  "winreg 0.55.0",
  "wry",
  "zip",

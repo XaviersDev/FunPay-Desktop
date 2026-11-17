@@ -13,7 +13,7 @@ use rquickjs::{CatchResultExt, Context, Function, Runtime};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -22,7 +22,10 @@ pub const DOCS_URL: &str = "https://funpay.tools/DAID.md";
 pub const CATALOG_URL: &str = "https://raw.githubusercontent.com/XaviersDev/FunPayTools-Site/refs/heads/main/catalog/desktopplugins.json";
 
 static CFG: OnceCell<Arc<Mutex<Config>>> = OnceCell::new();
-static RUNNING: Lazy<Mutex<HashMap<String, Sender<Msg>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static RUNNING: Lazy<Mutex<HashMap<String, (Sender<Msg>, u64)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+/// Поколение запуска: каждый старт плагина получает свой номер, чтобы старый поток
+/// при выходе не задел запись нового (гонка при restart).
+static GEN: AtomicU64 = AtomicU64::new(0);
 static STORAGE: Lazy<Mutex<HashMap<String, BTreeMap<String, String>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LOGS: Lazy<Mutex<HashMap<String, VecDeque<String>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 /// Своя сессия FunPay для плагинов (тот же аккаунт, отдельный поток запросов).
@@ -286,10 +289,11 @@ pub fn remove(id: &str) {
 }
 
 /// Плагины, запущенные только ради окна настроек: без событий, таймеров и запросов.
-static SETTINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// Хранятся как (id, поколение запуска).
+static SETTINGS: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
 
 fn settings_only(id: &str) -> bool {
-    SETTINGS.lock().unwrap().iter().any(|x| x == id)
+    SETTINGS.lock().unwrap().iter().any(|x| x.0 == id)
 }
 
 /// Плагин включён и работает.
@@ -308,9 +312,7 @@ pub fn start_settings(id: &str) {
     if is_loaded(id) {
         return;
     }
-    SETTINGS.lock().unwrap().push(id.to_string());
-    if let Err(e) = start_inner(id) {
-        SETTINGS.lock().unwrap().retain(|x| x != id);
+    if let Err(e) = start_inner(id, true) {
         log(id, &e);
     }
 }
@@ -319,23 +321,18 @@ pub fn start_settings(id: &str) {
 pub fn stop_settings(id: &str) {
     if settings_only(id) {
         stop(id);
-        for _ in 0..40 {
-            if !RUNNING.lock().unwrap().contains_key(id) && !settings_only(id) {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
+        SETTINGS.lock().unwrap().retain(|x| x.0 != id);
     }
 }
 
 pub fn send(id: &str, m: Msg) {
-    if let Some(tx) = RUNNING.lock().unwrap().get(id) {
+    if let Some((tx, _)) = RUNNING.lock().unwrap().get(id) {
         let _ = tx.send(m);
     }
 }
 
 pub fn stop(id: &str) {
-    if let Some(tx) = RUNNING.lock().unwrap().remove(id) {
+    if let Some((tx, _)) = RUNNING.lock().unwrap().remove(id) {
         let _ = tx.send(Msg::Stop);
     }
 }
@@ -350,8 +347,8 @@ pub fn stop_all() {
 /// Событие всем запущенным плагинам.
 pub fn emit(event: &str, data: Value) {
     let s = data.to_string();
-    let set = SETTINGS.lock().unwrap().clone();
-    for (id, tx) in RUNNING.lock().unwrap().iter() {
+    let set: Vec<String> = SETTINGS.lock().unwrap().iter().map(|x| x.0.clone()).collect();
+    for (id, (tx, _)) in RUNNING.lock().unwrap().iter() {
         if !set.contains(id) {
             let _ = tx.send(Msg::Event(event.to_string(), s.clone()));
         }
@@ -359,7 +356,7 @@ pub fn emit(event: &str, data: Value) {
 }
 
 pub fn any_running() -> bool {
-    let set = SETTINGS.lock().unwrap().clone();
+    let set: Vec<String> = SETTINGS.lock().unwrap().iter().map(|x| x.0.clone()).collect();
     RUNNING.lock().unwrap().keys().any(|k| !set.contains(k))
 }
 
@@ -451,39 +448,50 @@ pub fn start(id: &str) -> Result<(), String> {
         return Ok(());
     }
     stop_settings(id);
-    start_inner(id)
+    start_inner(id, false).map(|_| ())
 }
 
-fn start_inner(id: &str) -> Result<(), String> {
+fn start_inner(id: &str, settings: bool) -> Result<u64, String> {
     let code = code_of(id).ok_or_else(|| "Файл плагина не найден".to_string())?;
+    let gen = GEN.fetch_add(1, Ordering::Relaxed);
+    if settings {
+        SETTINGS.lock().unwrap().push((id.to_string(), gen));
+    }
     let (tx, rx) = channel::<Msg>();
-    RUNNING.lock().unwrap().insert(id.to_string(), tx);
+    RUNNING.lock().unwrap().insert(id.to_string(), (tx, gen));
     let pid = id.to_string();
-    std::thread::Builder::new()
+    let spawned = std::thread::Builder::new()
         .name(format!("plugin {id}"))
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            if let Err(e) = run(&pid, &code, rx) {
+            if let Err(e) = run(&pid, &code, rx, gen) {
                 log(&pid, &format!("Плагин остановлен с ошибкой: {e}"));
             }
-            RUNNING.lock().unwrap().remove(&pid);
-            SETTINGS.lock().unwrap().retain(|x| *x != pid);
+            // запись в RUNNING убираем, только если она наша: при restart там уже может
+            // лежать новый запуск, и выцерапать его запись нельзя
+            {
+                let mut g = RUNNING.lock().unwrap();
+                if g.get(&pid).map(|x| x.1) == Some(gen) {
+                    g.remove(&pid);
+                }
+            }
+            SETTINGS.lock().unwrap().retain(|x| !(x.0 == pid && x.1 == gen));
             let p = pid.clone();
             crate::ui::post(move |u| u.plugin_stopped(p));
-        })
-        .map_err(|e| e.to_string())?;
-    Ok(())
+        });
+    match spawned {
+        Ok(_) => Ok(gen),
+        Err(e) => {
+            RUNNING.lock().unwrap().remove(id);
+            SETTINGS.lock().unwrap().retain(|x| !(x.0 == id && x.1 == gen));
+            Err(e.to_string())
+        }
+    }
 }
 
 pub fn restart(id: &str) {
     stop(id);
-    // ждём, пока поток закроется
-    for _ in 0..40 {
-        if !is_running(id) {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
+    // ждать завершения старого потока не нужно: поколение защищает запись RUNNING
     if let Err(e) = start(id) {
         log(id, &e);
     }
@@ -495,7 +503,7 @@ struct Timer {
     every: Option<Duration>,
 }
 
-fn run(id: &str, code: &str, rx: Receiver<Msg>) -> Result<(), String> {
+fn run(id: &str, code: &str, rx: Receiver<Msg>, _gen: u64) -> Result<(), String> {
     let rt = Runtime::new().map_err(|e| e.to_string())?;
     rt.set_memory_limit(96 * 1024 * 1024);
     rt.set_max_stack_size(4 * 1024 * 1024);

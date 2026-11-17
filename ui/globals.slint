@@ -1,4 +1,4 @@
-import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, StatTile, SchedRow, PackItem, TplRow, AutoRow, LotRow, LotSection, LotFieldRow, ThemeCard, Anim, PluginRow, PUiRow, PCell, CatPlugin, CatPack, Ring, DecorBanner, AccPlan, AccNick } from "types.slint";
+import { ChatRow, FolderRow, MsgRow, Tile, OfferRow, ReviewRow, KV, PackRow, StickerCell, TradeRow, TxnRow, BrowserTab, AccountRow, NickStyle, StatTile, SchedRow, PackItem, TplRow, AutoRow, LotRow, LotSection, LotFieldRow, ThemeCard, Anim, PluginRow, PUiRow, PCell, CatPlugin, CatPack, Ring, DecorBanner, AccPlan, AccNick, SearchRow } from "types.slint";
 
 export global St {
     in-out property <string> version;
@@ -184,6 +184,10 @@ export global St {
     in-out property <bool> on-top;
     in-out property <bool> show-flood: true;
     in-out property <bool> show-gchat: true;
+    in-out property <bool> slow-poll;
+    in-out property <bool> msg-search-loading;
+    in-out property <string> msg-search-hint;
+    in-out property <[SearchRow]> search-results;
     in-out property <bool> avatar-busy;
     in-out property <bool> keep-background: true;
     in-out property <bool> autostart: true;
@@ -475,6 +479,7 @@ export global Api {
     // список
     callback select-folder(string);
     callback search-changed(string);
+    callback msg-search-openchat(string, int, string);
     callback chat-menu(string, int, string, string);   // id, kind, действие, аргумент
     callback create-folder(string);
     callback delete-folder(string);
@@ -554,6 +559,7 @@ export global Api {
     callback set-on-top(bool);
     callback set-show-flood(bool);
     callback set-show-gchat(bool);
+    callback set-slow-poll(bool);
     callback set-keep-background(bool);
     callback set-autostart(bool);
     callback import-theme();

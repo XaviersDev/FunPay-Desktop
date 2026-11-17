@@ -381,6 +381,16 @@ export struct SchedRow {
     late: bool,
 }
 
+export struct SearchRow {
+    chat_id: string,
+    kind: int,
+    message_id: string,
+    chat_name: string,
+    author: string,
+    date: string,
+    text: string,
+}
+
 // строка предпросмотра пака шаблонов
 export struct PackItem {
     idx: int,

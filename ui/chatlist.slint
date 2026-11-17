@@ -1,7 +1,7 @@
-import { ListView } from "std-widgets.slint";
+import { ListView, ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { St, Api } from "globals.slint";
-import { ChatRow, FolderRow } from "types.slint";
+import { ChatRow, FolderRow, SearchRow } from "types.slint";
 import { IconButton, Avatar, Badge, MenuItem, MenuSep, MenuCard, PrimaryButton, Dim, TourMark } from "widgets.slint";
 import { EpicNick } from "epic.slint";
 
@@ -484,6 +484,17 @@ component ChatItemView inherits Rectangle {
                     text: "Открыть на FunPay";
                     activated => { Api.chat-menu(item.id, item.kind, "web", ""); }
                 }
+                MenuSep { }
+                MenuItem {
+                    icon: @image-url("icons/download.svg");
+                    text: "Экспортировать как TXT";
+                    activated => { Api.chat-menu(item.id, item.kind, "export", "txt"); }
+                }
+                MenuItem {
+                    icon: @image-url("icons/download.svg");
+                    text: "Экспортировать как JSON";
+                    activated => { Api.chat-menu(item.id, item.kind, "export", "json"); }
+                }
                 if item.kind == 2: MenuItem {
                     icon: @image-url("icons/close.svg");
                     text: "Убрать из недавних";
@@ -525,6 +536,27 @@ component ChatItemView inherits Rectangle {
     }
 }
 
+component MessageSearchItem inherits Rectangle {
+    in property <SearchRow> item;
+    body := VerticalLayout {
+        padding: 8px;
+        spacing: 3px;
+        HorizontalLayout {
+            Text { text: root.item.chat_name; color: Theme.ink; font-size: 12.5px; font-weight: 650; overflow: elide; horizontal-stretch: 1; }
+            Text { text: root.item.date; color: Theme.faint; font-size: 10.5px; }
+        }
+        Text { text: root.item.author; color: Theme.accent; font-size: 11px; overflow: elide; }
+        Text { text: root.item.text; color: Theme.muted; font-size: 12px; overflow: clip; wrap: word-wrap; }
+    }
+    height: max(72px, body.preferred-height);
+    border-radius: 9px;
+    background: ta.has-hover ? Theme.hover : Theme.field;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Api.msg-search-openchat(root.item.chat_id, root.item.kind, root.item.message_id); }
+    }
+}
+
 export component ChatListPane inherits Rectangle {
     in property <bool> compact-folders;
     in property <bool> show-menu;
@@ -543,6 +575,9 @@ export component ChatListPane inherits Rectangle {
                 TourMark { tid: "gear"; }
             }
             Rectangle {
+                horizontal-stretch: 1;
+                min-width: 80px;
+                height: 36px;
                 border-radius: 19px;
                 background: Theme.field;
                 HorizontalLayout {
@@ -555,6 +590,8 @@ export component ChatListPane inherits Rectangle {
                         colorize: Theme.faint;
                     }
                     Rectangle {
+                        horizontal-stretch: 1;
+                        min-width: 20px;
                         search := TextInput {
                             width: parent.width;
                             font-size: 14.5px;
@@ -584,7 +621,6 @@ export component ChatListPane inherits Rectangle {
                     }
                 }
             }
-            // сайт FunPay в мини-окне: купить то, чего в приложении пока нет
             VerticalLayout {
                 alignment: center;
                 IconButton {
@@ -624,13 +660,45 @@ export component ChatListPane inherits Rectangle {
         }
         Rectangle {
             vertical-stretch: 1;
-            ListView {
+            if search.text != "": ScrollView {
+                content-width: self.visible-width;
+                content-height: max(self.visible-height, results.preferred-height);
+                results := VerticalLayout {
+                    width: parent.width;
+                    alignment: start;
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    spacing: 4px;
+                    if St.chats.length > 0: Text {
+                        text: "Чаты";
+                        color: Theme.accent;
+                        font-size: 12px;
+                        font-weight: 650;
+                        x: 8px;
+                    }
+                    for c in St.chats: ChatItemView {
+                        item: c;
+                        clicked => { Api.open-chat(c.id, c.kind); }
+                    }
+                    if St.msg-search-loading || St.msg-search-hint != "" || St.search-results.length > 0: Text {
+                        text: St.msg-search-loading ? "Ищу в сообщениях…" : St.msg-search-hint != "" ? "Сообщения · " + St.msg-search-hint : "Сообщения";
+                        color: Theme.accent;
+                        font-size: 12px;
+                        font-weight: 650;
+                        x: 8px;
+                    }
+                    for r in St.search-results: MessageSearchItem {
+                        item: r;
+                    }
+                }
+            }
+            if search.text == "": ListView {
                 for c in St.chats: ChatItemView {
                     item: c;
                     clicked => { Api.open-chat(c.id, c.kind); }
                 }
             }
-            if St.chats.length == 0: Text {
+            if search.text == "" && St.chats.length == 0: Text {
                 width: parent.width - 40px;
                 text: St.chats-loading ? "Загружаю чаты…" : St.folder == "unread" ? "Всё прочитано" : "Здесь пока пусто";
                 color: Theme.muted;

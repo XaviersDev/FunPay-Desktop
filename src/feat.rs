@@ -705,6 +705,37 @@ impl Ui {
     // ------------------------------------------------------------ кэш чатов
 
     pub fn load_cache_for(&mut self, uid: &str) {
+        self.ext.ms_gen += 1;
+        self.st(|s| {
+            s.set_msg_search_loading(false);
+            s.set_search_results(slint::ModelRc::default());
+        });
+        crate::searchidx::set_account(uid);
+        if self.ext.search_backfill_uid != uid {
+            self.ext.search_backfill_uid = uid.to_string();
+            // Фоновый backfill: сложить кэш в архив для поиска.
+            let uid2 = uid.to_string();
+            let mut kinds: std::collections::HashMap<String, i32> = self
+                .cfg
+                .lock()
+                .unwrap()
+                .known_chats
+                .iter()
+                .map(|(id, (kind, _))| (id.clone(), *kind))
+                .collect();
+            kinds.insert("flood".into(), 1);
+            for (_, id) in &self.games {
+                kinds.insert(id.clone(), 2);
+            }
+            std::thread::spawn(move || {
+                for chat in crate::cache::load_chats(&uid2) {
+                    if let Some(snap) = crate::cache::load_msgs(&uid2, &chat.id) {
+                        let kind = kinds.get(&chat.id).copied().unwrap_or(0);
+                        crate::searchidx::add(&uid2, &chat.id, kind, &snap.peer_name, &snap.msgs);
+                    }
+                }
+            });
+        }
         let chats = crate::cache::load_chats(uid);
         if !chats.is_empty() && self.chats.is_empty() {
             self.chats = chats;
